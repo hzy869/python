@@ -1,0 +1,894 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AI 天气查询 Agent</title>
+<script src="https://cdn.jsdelivr.net/npm/@tencent-ai/workbuddy-cloud-sdk@dev/lib/index.global.js"></script>
+<style>
+  :root {
+    --bg: #f5f7fa;
+    --panel: #ffffff;
+    --line: #e3e8ef;
+    --text: #1f2937;
+    --muted: #6b7280;
+    --brand: #2563eb;
+    --brand-soft: #eff6ff;
+    --ok: #059669;
+    --warn: #b45309;
+    --err: #dc2626;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+      "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  }
+  header {
+    background: var(--panel);
+    border-bottom: 1px solid var(--line);
+    padding: 14px 22px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+    position: sticky;
+    top: 0;
+    z-index: 5;
+  }
+  header h1 { font-size: 17px; margin: 0; font-weight: 650; }
+  .tag {
+    font-size: 12px;
+    padding: 2px 9px;
+    border-radius: 999px;
+    background: var(--brand-soft);
+    color: var(--brand);
+    border: 1px solid #dbeafe;
+  }
+  .tag.muted { background: #f3f4f6; color: var(--muted); border-color: var(--line); }
+  .tag.ok { background: #ecfdf5; color: var(--ok); border-color: #d1fae5; }
+  .tag.warn { background: #fffbeb; color: var(--warn); border-color: #fde68a; }
+  main {
+    display: grid;
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    gap: 16px;
+    padding: 16px 22px 28px;
+    max-width: 1400px;
+    margin: 0 auto;
+    align-items: start;
+  }
+  @media (max-width: 980px) { main { grid-template-columns: 1fr; } }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 16px;
+  }
+  .card h2 { font-size: 14px; margin: 0 0 12px; font-weight: 650; color: var(--muted); }
+  #chat { display: flex; flex-direction: column; gap: 12px; min-height: 220px; }
+  .msg { display: flex; gap: 10px; align-items: flex-start; }
+  .avatar {
+    width: 30px; height: 30px; flex: 0 0 30px;
+    border-radius: 50%; display: grid; place-items: center;
+    background: #f1f5f9; font-size: 15px;
+  }
+  .bubble {
+    background: #f8fafc;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 10px 13px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+  .msg.user .avatar { background: #dbeafe; }
+  .msg.user .bubble { background: var(--brand-soft); border-color: #dbeafe; }
+  .msg.tool .bubble {
+    background: #f9fafb; border-style: dashed;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12.5px; line-height: 1.55;
+  }
+  .composer { display: flex; gap: 10px; margin-top: 14px; }
+  .composer input {
+    flex: 1; padding: 11px 13px;
+    border: 1px solid var(--line); border-radius: 10px;
+    font-size: 14.5px; font-family: inherit; outline: none; background: #fff; color: var(--text);
+  }
+  .composer input:focus { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(37,99,235,.12); }
+  button {
+    font: inherit; border-radius: 10px; border: 1px solid var(--line);
+    background: #fff; color: var(--text); padding: 9px 14px; cursor: pointer;
+  }
+  button:hover { border-color: #cbd5e1; background: #f8fafc; }
+  button.primary { background: var(--brand); color: #fff; border-color: var(--brand); }
+  button.primary:hover { background: #1d4ed8; }
+  button:disabled { opacity: .55; cursor: not-allowed; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+  .chips button { font-size: 13px; padding: 7px 11px; background: #f8fafc; }
+  .hint { color: var(--muted); font-size: 13.5px; }
+  pre {
+    background: #0f172a; color: #e2e8f0; border-radius: 9px;
+    padding: 11px 13px; overflow-x: auto; font-size: 12.5px; line-height: 1.55; margin: 8px 0 0;
+  }
+  pre.light { background: #f8fafc; color: #334155; border: 1px solid var(--line); }
+  .log-item { padding-bottom: 14px; margin-bottom: 14px; border-bottom: 1px dashed var(--line); }
+  .log-item:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+  .log-item .q { font-weight: 600; margin-bottom: 6px; }
+  .badge {
+    display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 999px;
+    background: #fffbeb; color: var(--warn); border: 1px solid #fde68a; margin-top: 8px;
+  }
+  .badge.err { background: #fef2f2; color: var(--err); border-color: #fecaca; }
+  .spin { display: inline-block; width: 13px; height: 13px; border-radius: 50%;
+    border: 2px solid #cbd5e1; border-top-color: var(--brand); animation: sp .8s linear infinite; }
+  @keyframes sp { to { transform: rotate(360deg); } }
+  .row { display: flex; align-items: center; gap: 8px; }
+  .spacer { flex: 1; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🌤️ AI 天气查询 Agent</h1>
+  <span class="tag" id="modelTag">模型加载中…</span>
+  <span class="tag muted">数据源：Open-Meteo 真实预报</span>
+  <span class="tag muted" id="engineTag">引擎：WorkBuddy 云端模型</span>
+  <span class="spacer"></span>
+  <button id="clearBtn">清空对话</button>
+</header>
+
+<main>
+  <section class="card">
+    <h2>对话</h2>
+    <div class="chips" id="chips"></div>
+    <div id="chat">
+      <div class="hint" id="hint">
+        问我任意中国城市的真实天气，例如「广州今天天气怎么样」「肇庆未来 3 天会下雨吗」。
+        我会先调用天气工具取真实数据，再根据数据回答，并把工具调用过程记录在右边的推理日志里。
+      </div>
+    </div>
+    <form class="composer" id="composer">
+      <input id="input" placeholder="例如：杭州明天要穿外套吗？" autocomplete="off" />
+      <button class="primary" id="sendBtn" type="submit">发送</button>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>Agent 推理日志</h2>
+    <div id="logs"><div class="hint">暂无推理日志，发送天气问题后会自动记录。</div></div>
+  </section>
+</main>
+
+<script>
+(function () {
+  "use strict";
+
+  // =====================================================================
+  // 云端模型配置（来自云服务开通时返回的 publicConfig，仅含公开信息）
+  // =====================================================================
+  var PUBLIC_CONFIG = {
+    endpoint: "https://weather-agent.app.workbuddy.host",
+    oauthRelayBaseUrl: "https://www.workbuddy.cn/v2/as/genie-baas/oauth",
+    publishableKey: "wbpk_i9zyhcjRE7Qmmsm3hrL8sT_RvYQGCX7NFpggQzsVuwFeqGEjlQ0zPZc"
+  };
+
+  var SYSTEM_PROMPT =
+    "你是一个严格的 AI 天气查询 Agent。所有天气、温度、降雨、湿度、风力问题都必须调用 query_weather 工具，" +
+    "不允许凭记忆或推测回答天气。用户说“明天”时 start_offset 传 1，“后天”传 2，“大后天”传 3，" +
+    "“未来 N 天”“这周”时 days 传对应天数（最多 16）。工具的返回是唯一事实来源，" +
+    "温度、天气、湿度、风力、降水概率必须原样使用，不得修改、四舍五入或补充。" +
+    "如果工具返回错误（例如城市不存在），必须如实告知用户，不得编造天气。" +
+    "回答要自然、简洁、使用中文，可以在数据之后补一句生活提示（是否需要带伞、如何穿衣）。";
+
+  var TOOLS = [{
+    type: "function",
+    function: {
+      name: "query_weather",
+      description: "查询指定中国城市的真实天气预报，返回每天的日期、星期、天气、最高温、最低温、湿度、风力、降水概率、紫外线。",
+      parameters: {
+        type: "object",
+        properties: {
+          city: { type: "string", description: "城市名称，例如 广州、肇庆、杭州" },
+          days: { type: "integer", description: "查询天数，1 到 16，默认 1" },
+          start_offset: { type: "integer", description: "从今天起偏移几天开始：0=今天，1=明天，2=后天" }
+        },
+        required: ["city"]
+      }
+    }
+  }];
+
+  var MAX_TOOL_ROUNDS = 5;
+  var conversationId = "weather-" + Math.random().toString(36).slice(2, 10);
+
+  var cloud = null;
+  var modelId = null;
+  var modelLabel = "";
+  var cloudReady = false;
+  var cloudError = "";
+  var messages = [];
+  var busy = false;
+
+  var $ = function (id) { return document.getElementById(id); };
+  var chatEl = $("chat");
+  var logsEl = $("logs");
+  var inputEl = $("input");
+  var sendBtn = $("sendBtn");
+  var hintEl = $("hint");
+
+  // =====================================================================
+  // 城市解析
+  // =====================================================================
+  var CITY_ALIASES = {
+    "羊城": "广州", "花城": "广州", "鹏城": "深圳", "帝都": "北京", "首都": "北京",
+    "魔都": "上海", "申城": "上海", "山城": "重庆", "蓉城": "成都", "春城": "昆明",
+    "泉城": "济南", "冰城": "哈尔滨", "星城": "长沙", "榕城": "福州", "金城": "兰州",
+    "夏都": "西宁", "杭城": "杭州", "津门": "天津", "东方之珠": "香港", "长安": "西安",
+    "香港岛": "香港", "氹仔": "澳门", "台北市": "台北"
+  };
+  var ADMIN_SUFFIXES = ["特别行政区", "自治州", "自治县", "自治区", "地区", "市辖区", "新区", "市", "县", "区", "镇", "乡"];
+
+  var cityTable = {};
+  var cityNames = [];
+
+  function loadCityTable() {
+    return fetch("city_coords.json")
+      .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+      .then(function (data) {
+        cityTable = data;
+        cityNames = Object.keys(data).sort(function (a, b) { return b.length - a.length; });
+      })
+      .catch(function () { cityTable = {}; cityNames = []; });
+  }
+
+  function normalizeCity(raw) {
+    var name = String(raw || "").replace(/\s+/g, "");
+    for (var i = 0; i < ADMIN_SUFFIXES.length; i++) {
+      var s = ADMIN_SUFFIXES[i];
+      if (name.length > s.length + 1 && name.slice(-s.length) === s) {
+        name = name.slice(0, -s.length);
+        break;
+      }
+    }
+    return name;
+  }
+
+  function resolveCity(raw) {
+    var name = normalizeCity(raw);
+    if (!name) return null;
+    if (cityTable[name]) {
+      return { name: name, admin: cityTable[name].admin, lat: cityTable[name].lat, lon: cityTable[name].lon };
+    }
+    if (CITY_ALIASES[name] && cityTable[CITY_ALIASES[name]]) {
+      var alias = CITY_ALIASES[name];
+      return { name: alias, admin: cityTable[alias].admin, lat: cityTable[alias].lat, lon: cityTable[alias].lon };
+    }
+    for (var i = 0; i < cityNames.length; i++) {
+      if (name.indexOf(cityNames[i]) >= 0) {
+        var c = cityNames[i];
+        return { name: c, admin: cityTable[c].admin, lat: cityTable[c].lat, lon: cityTable[c].lon };
+      }
+    }
+    return null;
+  }
+
+  function extractCity(text) {
+    text = String(text || "");
+    if (!text) return "";
+    for (var a in CITY_ALIASES) { if (text.indexOf(a) >= 0) return CITY_ALIASES[a]; }
+    for (var i = 0; i < cityNames.length; i++) { if (text.indexOf(cityNames[i]) >= 0) return cityNames[i]; }
+    var m = text.match(/([\u4e00-\u9fa5]{2,8}?(?:市|区|县|州))/);
+    if (m) { var r = resolveCity(m[1]); if (r) return r.name; }
+    var m2 = text.match(/([\u4e00-\u9fa5]{2,6}?)(?:的)?(?:今天|明天|后天|大后天|未来|最近|接下来)?(?:天气|气温|温度|降雨|下雨|湿度|风力|冷不冷|热不热)/);
+    if (m2) { var r2 = resolveCity(m2[1]); if (r2) return r2.name; }
+    return "";
+  }
+
+  // =====================================================================
+  // 真实天气数据（Open-Meteo）
+  // =====================================================================
+  var WMO = {
+    0: ["晴", "☀️"], 1: ["晴间多云", "🌤️"], 2: ["多云", "⛅"], 3: ["阴", "☁️"],
+    45: ["有雾", "🌫️"], 48: ["雾凇", "🌫️"],
+    51: ["小毛毛雨", "🌦️"], 53: ["毛毛雨", "🌦️"], 55: ["较强毛毛雨", "🌧️"],
+    56: ["冻毛毛雨", "🌧️"], 57: ["强冻毛毛雨", "🌧️"],
+    61: ["小雨", "🌦️"], 63: ["中雨", "🌧️"], 65: ["大雨", "🌧️"], 66: ["冻雨", "🌧️"], 67: ["强冻雨", "🌧️"],
+    71: ["小雪", "🌨️"], 73: ["中雪", "🌨️"], 75: ["大雪", "❄️"], 77: ["米雪", "🌨️"],
+    80: ["阵雨", "🌦️"], 81: ["强阵雨", "🌧️"], 82: ["暴雨", "⛈️"],
+    85: ["阵雪", "🌨️"], 86: ["强阵雪", "❄️"],
+    95: ["雷阵雨", "⛈️"], 96: ["雷阵雨伴冰雹", "⛈️"], 99: ["强雷阵雨伴冰雹", "⛈️"]
+  };
+  var WEEKDAYS = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+  var BEAUFORT = [1, 6, 12, 20, 29, 39, 50, 62, 75, 89, 103, 118];
+
+  function describeWmo(code) { return WMO[code] || ["未知", "❓"]; }
+
+  function kmhToBeaufort(kmh) {
+    if (kmh === null || kmh === undefined) return "未知";
+    if (kmh < 1) return "0级";
+    for (var i = 0; i < BEAUFORT.length; i++) { if (kmh <= BEAUFORT[i]) return (i + 1) + "级"; }
+    return "12级以上";
+  }
+
+  function uvText(v) {
+    if (typeof v !== "number") return "未知";
+    var n = Math.round(v);
+    if (n <= 2) return n + "（很弱）";
+    if (n <= 5) return n + "（中等）";
+    if (n <= 7) return n + "（较强）";
+    if (n <= 10) return n + "（很强）";
+    return n + "（极强）";
+  }
+
+  function directForecastUrl(forecastDays, lat, lon) {
+    var p = new URLSearchParams({
+      latitude: lat,
+      longitude: lon,
+      daily: "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,relative_humidity_2m_mean,wind_speed_10m_max,uv_index_max",
+      current: "temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m",
+      timezone: "Asia/Shanghai",
+      forecast_days: String(forecastDays)
+    });
+    return "https://api.open-meteo.com/v1/forecast?" + p.toString();
+  }
+
+  // 优先走同源代理（由 server.js 转发，服务器网络更稳）；代理不可用再直连
+  async function loadForecastJson(lat, lon, forecastDays) {
+    var proxyUrl = "/api/forecast?lat=" + encodeURIComponent(lat) +
+      "&lon=" + encodeURIComponent(lon) + "&forecast_days=" + forecastDays;
+    var directUrl = directForecastUrl(forecastDays, lat, lon);
+    var errors = [];
+
+    try {
+      var viaProxy = await fetch(proxyUrl);
+      if (viaProxy.ok) return await viaProxy.json();
+      errors.push("代理接口 HTTP " + viaProxy.status);
+    } catch (e) {
+      errors.push("代理接口不可达");
+    }
+
+    try {
+      var direct = await fetch(directUrl);
+      if (direct.ok) return await direct.json();
+      errors.push("直连 HTTP " + direct.status);
+    } catch (e) {
+      errors.push("直连不可达");
+    }
+
+    throw new Error("天气数据获取失败（" + errors.join("；") + "）");
+  }
+
+  async function fetchForecast(city, startOffset, days) {
+    startOffset = Math.max(0, parseInt(startOffset || 0, 10) || 0);
+    days = Math.min(16, Math.max(1, parseInt(days || 1, 10) || 1));
+    var forecastDays = Math.min(startOffset + days, 16);
+
+    var payload = await loadForecastJson(city.lat, city.lon, forecastDays);
+    var daily = payload.daily || {};
+    var times = daily.time || [];
+    var items = [];
+
+    for (var i = startOffset; i < times.length && items.length < days; i++) {
+      var code = (daily.weather_code || [])[i];
+      var desc = describeWmo(code);
+      var high = (daily.temperature_2m_max || [])[i];
+      var low = (daily.temperature_2m_min || [])[i];
+      var pop = (daily.precipitation_probability_max || [])[i];
+      var hum = (daily.relative_humidity_2m_mean || [])[i];
+      var wind = (daily.wind_speed_10m_max || [])[i];
+      var uv = (daily.uv_index_max || [])[i];
+      var weekday = "";
+      try { weekday = WEEKDAYS[new Date(times[i] + "T00:00:00").getDay()]; } catch (e) { weekday = ""; }
+
+      items.push({
+        "日期": times[i],
+        "星期": weekday,
+        "城市": city.name,
+        "地区": city.admin,
+        "天气": desc[0],
+        "天气图标": desc[1],
+        "最高温": (high === null || high === undefined) ? "未知" : Math.round(high) + "°C",
+        "最低温": (low === null || low === undefined) ? "未知" : Math.round(low) + "°C",
+        "湿度": (hum === null || hum === undefined) ? "未知" : Math.round(hum) + "%",
+        "风力": kmhToBeaufort(wind),
+        "降水概率": (pop === null || pop === undefined) ? "未知" : Math.round(pop) + "%",
+        "紫外线指数": (uv === null || uv === undefined) ? null : Math.round(uv),
+        "数据源": "Open-Meteo 真实预报"
+      });
+    }
+
+    if (!items.length) throw new Error("没有取到 " + city.name + " 的预报数据。");
+
+    var current = null;
+    var cur = payload.current;
+    if (cur) {
+      var cd = describeWmo(cur.weather_code);
+      current = {
+        "天气": cd[0],
+        "天气图标": cd[1],
+        "温度": cur.temperature_2m === undefined ? "未知" : Math.round(cur.temperature_2m) + "°C",
+        "体感温度": cur.apparent_temperature === undefined ? "未知" : Math.round(cur.apparent_temperature) + "°C",
+        "湿度": cur.relative_humidity_2m === undefined ? "未知" : Math.round(cur.relative_humidity_2m) + "%",
+        "风速": kmhToBeaufort(cur.wind_speed_10m)
+      };
+    }
+    return { city: city, items: items, current: current };
+  }
+
+  function toInt(text) {
+    var m = String(text === null || text === undefined ? "" : text).match(/-?\d+/);
+    return m ? parseInt(m[0], 10) : null;
+  }
+
+  function adviceOne(item, focus) {
+    var tips = [];
+    var cond = String(item["天气"] || "");
+    var pop = toInt(item["降水概率"]);
+    var high = toInt(item["最高温"]);
+    var low = toInt(item["最低温"]);
+    var hum = toInt(item["湿度"]);
+    var uv = item["紫外线指数"];
+
+    if (cond.indexOf("雨") >= 0 || cond.indexOf("雪") >= 0 || (pop !== null && pop >= 50)) tips.push("有降水，出门记得带伞");
+    else if (pop !== null && pop >= 25) tips.push("有零星降水的可能，可以备一把伞");
+
+    if (high !== null) {
+      if (high >= 33) tips.push("白天很热，注意防暑补水");
+      else if (high >= 28) tips.push("白天偏热，注意防晒");
+    }
+    if (low !== null) {
+      if (low <= 5) tips.push("早晚很冷，务必保暖");
+      else if (low <= 12) tips.push("早晚偏凉，建议加件外套");
+    }
+    if (high !== null && low !== null && high - low >= 12) tips.push("昼夜温差较大，注意增减衣物");
+    if (typeof uv === "number" && uv >= 7) tips.push("紫外线较强，做好防晒");
+    if (hum !== null && hum >= 85) tips.push("湿度偏高，体感闷湿");
+    if (focus === "rain" && !tips.some(function (t) { return t.indexOf("伞") >= 0; })) tips.push("降水概率不大，不用特意带伞");
+    return tips.length ? tips.slice(0, 3).join("；") + "。" : "";
+  }
+
+  function adviceMulti(items) {
+    var tips = [];
+    var rainy = items.filter(function (it) {
+      return String(it["天气"]).indexOf("雨") >= 0 || String(it["天气"]).indexOf("雪") >= 0 || (toInt(it["降水概率"]) || 0) >= 50;
+    });
+    if (rainy.length) {
+      var marks = rainy.slice(0, 3).map(function (it) { return it["日期"].slice(5); }).join("、");
+      tips.push(marks + (rainy.length > 3 ? " 等" : "") + " 有降水，记得带伞");
+    } else {
+      tips.push("这几天降水概率都不高，一般不用带伞");
+    }
+    var highs = items.map(function (it) { return toInt(it["最高温"]); }).filter(function (v) { return v !== null; });
+    var lows = items.map(function (it) { return toInt(it["最低温"]); }).filter(function (v) { return v !== null; });
+    if (highs.length && lows.length) {
+      var hottest = Math.max.apply(null, highs);
+      var coldest = Math.min.apply(null, lows);
+      if (hottest >= 33) tips.push("最高可能到 " + hottest + "°C，注意防暑补水");
+      if (coldest <= 5) tips.push("最低可能到 " + coldest + "°C，注意保暖");
+      else if (coldest <= 12) tips.push("最低约 " + coldest + "°C，早晚需要加外套");
+      if (hottest - coldest >= 12) tips.push("温差较大，注意增减衣物");
+    }
+    return tips.slice(0, 3).join("；") + "。";
+  }
+
+  function summarize(items, current, focus) {
+    if (!items.length) return "没有查询到天气数据。";
+    var headCity = items[0]["城市"];
+    var area = items[0]["地区"] || "";
+    if (area && area !== headCity) headCity += "（" + area + "）";
+
+    if (items.length === 1) {
+      var it = items[0];
+      var out = headCity + " " + it["日期"] + " " + it["星期"] + "：" + it["天气图标"] + " " + it["天气"] +
+        "，" + it["最低温"] + " ~ " + it["最高温"] + "，湿度 " + it["湿度"] + "，风力 " + it["风力"] +
+        "，降水概率 " + it["降水概率"] + "，紫外线 " + uvText(it["紫外线指数"]) + "。";
+      if (current) {
+        out += "\n\n实况：当前 " + current["温度"] + "，体感 " + current["体感温度"] + "，" + current["天气"] + "，湿度 " + current["湿度"] + "。";
+      }
+      var a = adviceOne(it, focus);
+      if (a) out += "\n\n小提示：" + a;
+      return out;
+    }
+
+    var lines = [headCity + " 未来 " + items.length + " 天预报（真实数据）："];
+    for (var i = 0; i < items.length; i++) {
+      var x = items[i];
+      var extra = focus === "uv" ? "，紫外线 " + uvText(x["紫外线指数"]) : "";
+      lines.push("- " + x["日期"] + " " + x["星期"] + "：" + x["天气图标"] + " " + x["天气"] + "，" +
+        x["最低温"] + " ~ " + x["最高温"] + "，湿度 " + x["湿度"] + "，风力 " + x["风力"] +
+        "，降水概率 " + x["降水概率"] + extra);
+    }
+    lines.push("");
+    lines.push("小提示：" + adviceMulti(items));
+    return lines.join("\n");
+  }
+
+  // =====================================================================
+  // 天气工具（供模型调用 + 本地兜底共用）
+  // =====================================================================
+  async function runWeatherTool(args) {
+    var city = resolveCity(args && args.city);
+    if (!city) {
+      return { ok: false, forModel: JSON.stringify({ error: "未找到城市：" + (args && args.city) + "。请换一个城市名，例如“广州”“杭州”。" }) };
+    }
+    var offset = parseInt((args && args.start_offset) || 0, 10) || 0;
+    var days = parseInt((args && args.days) || 1, 10) || 1;
+    var forecast = await fetchForecast(city, offset, days);
+    var forModel = JSON.stringify({
+      "城市": city.name,
+      "地区": city.admin,
+      "数据源": "Open-Meteo 真实预报",
+      "当前实况": forecast.current,
+      "预报": forecast.items
+    });
+    return { ok: true, forecast: forecast, forModel: forModel, args: { city: city.name, days: days, start_offset: offset } };
+  }
+
+  // =====================================================================
+  // 本地兜底引擎（云端模型不可用时，规则解析 + 真实天气）
+  // =====================================================================
+  var WEATHER_RE = /天气|气温|温度|降雨|下雨|雨|雪|湿度|风力|风速|冷|热|闷|潮|穿|伞|紫外线|防晒|雾|霾|台风|晴|阴|多云|体感/;
+  var FOLLOW_RE = /那|呢|未来|明天|明日|后天|大后天|最近|接下来|这几天|近几|\d+\s*天|几\s*天|一周|一星期|这周|本周/;
+
+  function timeRange(text) {
+    text = text || "";
+    if (text.indexOf("大后天") >= 0) return [3, 1, "大后天"];
+    if (text.indexOf("后天") >= 0) return [2, 1, "后天"];
+    if (/明天|明日|明儿/.test(text)) return [1, 1, "明天"];
+    var m = text.match(/(\d+)\s*天/);
+    var days = m ? parseInt(m[1], 10) : null;
+    if (days === null) {
+      var cn = { "一": 1, "两": 2, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7 };
+      var m2 = text.match(/([一两二三四五六七])\s*天/);
+      if (m2) days = cn[m2[1]];
+    }
+    if (days) return [0, Math.min(16, Math.max(1, days)), "未来 " + days + " 天"];
+    if (/一周|一星期|七天|7\s*天|这周|本周|整周/.test(text)) return [0, 7, "未来一周"];
+    if (/最近|这几天|近几|未来几天|接下来|往后/.test(text)) return [0, 3, "未来 3 天"];
+    return null;
+  }
+
+  function detectFocus(text) {
+    if (/雨|雪|带伞|伞|降水|会不会下/.test(text)) return "rain";
+    if (/紫外线|防晒|晒/.test(text)) return "uv";
+    if (/风力|风大|大风/.test(text)) return "wind";
+    if (/穿|冷不冷|冷吗|热不热|热吗|衣服|外套/.test(text)) return "clothing";
+    return "general";
+  }
+
+  var lastCity = "";
+  var lastOffset = 0;
+  var lastDays = 1;
+
+  async function localAnswer(text, historyText) {
+    var cityInInput = extractCity(text);
+
+    if (/支持.*城市|哪些城市|城市列表/.test(text)) {
+      return { output: "内置城市表已收录 " + cityNames.length + " 个中国城市，例如：" + cityNames.slice(0, 20).join("、") + " 等。", steps: [] };
+    }
+    if (/你是谁|你叫什么|能做什么|会什么|有什么功能|帮助/.test(text)) {
+      return { output: "我是天气查询 Agent：可以查任意中国城市的真实天气（Open-Meteo 数据），支持“明天/后天/未来 N 天/这周”等说法，也听得懂“羊城”“魔都”这类俗称。", steps: [] };
+    }
+
+    var hasCityContext = !!lastCity;
+    var isWeather = WEATHER_RE.test(text) || (hasCityContext && FOLLOW_RE.test(text));
+    if (!isWeather) {
+      if (/^(你好|您好|hi|hello|哈喽|在吗)/i.test(text)) {
+        return { output: "你好！告诉我城市和时间就能查真实天气，例如“广州今天天气怎么样”“肇庆未来 3 天会下雨吗”。", steps: [] };
+      }
+      return { output: "我主要负责查天气。你可以告诉我城市和时间，例如：“肇庆未来 3 天天气”“杭州明天冷不冷”。", steps: [] };
+    }
+
+    var city = cityInInput || (historyText ? extractCity(historyText) : "") || lastCity;
+    if (!city) return { output: "好的，请告诉我城市名，例如“广州”“肇庆”“杭州”，我就能查到它的真实天气。", steps: [] };
+
+    var range = timeRange(text);
+    if (!range) {
+      range = (cityInInput || !lastCity) ? [0, 1, "今天"] : [lastOffset, lastDays, null];
+    }
+    var offset = range[0], days = range[1];
+
+    var result = await runWeatherTool({ city: city, days: days, start_offset: offset });
+    if (!result.ok) return { output: JSON.parse(result.forModel).error, steps: [] };
+
+    lastCity = result.forecast.city.name;
+    lastOffset = offset;
+    lastDays = days;
+    var output = summarize(result.forecast.items, offset === 0 ? result.forecast.current : null, detectFocus(text));
+    return { output: output, steps: [{ name: "query_weather", args: result.args, result: result.forModel }] };
+  }
+
+  // =====================================================================
+  // UI
+  // =====================================================================
+  function addMessage(role, content) {
+    if (hintEl && hintEl.parentNode) hintEl.parentNode.removeChild(hintEl);
+    var wrap = document.createElement("div");
+    wrap.className = "msg " + role;
+    var avatar = document.createElement("div");
+    avatar.className = "avatar";
+    avatar.textContent = role === "user" ? "🧑" : role === "tool" ? "🛠️" : "🤖";
+    var bubble = document.createElement("div");
+    bubble.className = "bubble";
+    bubble.textContent = content;
+    wrap.appendChild(avatar);
+    wrap.appendChild(bubble);
+    chatEl.appendChild(wrap);
+    wrap.scrollIntoView({ block: "end", behavior: "smooth" });
+    return bubble;
+  }
+
+  function addLog(question, steps, warning, thinking) {
+    if (logsEl.querySelector(".hint")) logsEl.innerHTML = "";
+    var item = document.createElement("div");
+    item.className = "log-item";
+    var q = document.createElement("div");
+    q.className = "q";
+    q.textContent = "用户提问：" + question;
+    item.appendChild(q);
+
+    if (thinking) {
+      var pre = document.createElement("pre");
+      pre.className = "light";
+      pre.textContent = thinking;
+      item.appendChild(pre);
+    }
+
+    steps.forEach(function (s, idx) {
+      var label = document.createElement("div");
+      label.className = "hint";
+      label.textContent = (idx + 1) + ". 调用工具：" + s.name;
+      item.appendChild(label);
+
+      var argPre = document.createElement("pre");
+      argPre.className = "light";
+      argPre.textContent = "参数：" + JSON.stringify(s.args);
+      item.appendChild(argPre);
+
+      var resPre = document.createElement("pre");
+      try { resPre.textContent = "返回：" + JSON.stringify(JSON.parse(s.result), null, 2); }
+      catch (e) { resPre.textContent = "返回：" + s.result; }
+      item.appendChild(resPre);
+    });
+
+    if (warning) {
+      var b = document.createElement("div");
+      b.className = "badge";
+      b.textContent = warning;
+      item.appendChild(b);
+    }
+
+    logsEl.insertBefore(item, logsEl.firstChild);
+  }
+
+  function setBusy(flag) {
+    busy = flag;
+    sendBtn.disabled = flag;
+    inputEl.disabled = flag;
+  }
+
+  function showEngine(mode, note) {
+    var el = $("engineTag");
+    if (mode === "cloud") {
+      el.className = "tag ok";
+      el.textContent = "引擎：WorkBuddy 云端模型";
+    } else {
+      el.className = "tag warn";
+      el.textContent = "引擎：本地规则解析（云端模型调用失败）";
+      if (note) el.title = note;
+    }
+  }
+
+  // =====================================================================
+  // 云端 Agent 主循环（流式 + 工具调用）
+  // =====================================================================
+  async function cloudAnswer(userText, bubbleEl) {
+    var steps = [];
+    var thinkingLines = [];
+    var working = messages.slice();
+    working.push({ role: "user", content: userText });
+
+    for (var round = 0; round < MAX_TOOL_ROUNDS; round++) {
+      var stream = cloud.llm.chat.completions.create({
+        model: modelId,
+        messages: [{ role: "system", content: SYSTEM_PROMPT }].concat(working),
+        tools: TOOLS,
+        stream: true,
+        conversationId: conversationId
+      });
+
+      var content = "";
+      var toolCalls = new Map();
+      var finish = null;
+
+      for await (var chunk of stream) {
+        var choice = chunk.choices && chunk.choices[0];
+        if (!choice) continue;
+        var delta = choice.delta || {};
+        if (delta.content) {
+          content += delta.content;
+          bubbleEl.textContent = content;
+        }
+        if (delta.tool_calls) {
+          for (var i = 0; i < delta.tool_calls.length; i++) {
+            var tc = delta.tool_calls[i];
+            var idx = tc.index === undefined ? 0 : tc.index;
+            var acc = toolCalls.get(idx) || { id: "", type: "function", function: { name: "", arguments: "" } };
+            if (tc.id) acc.id = tc.id;
+            if (tc.function && tc.function.name) acc.function.name = tc.function.name;
+            if (tc.function && tc.function.arguments) acc.function.arguments += tc.function.arguments;
+            toolCalls.set(idx, acc);
+          }
+        }
+        if (choice.finish_reason) finish = choice.finish_reason;
+      }
+
+      if (toolCalls.size > 0) {
+        var calls = [];
+        toolCalls.forEach(function (v) { calls.push(v); });
+
+        working.push({
+          role: "assistant",
+          content: content || null,
+          tool_calls: calls.map(function (c) {
+            return { id: c.id, type: "function", function: { name: c.function.name, arguments: c.function.arguments || "{}" } };
+          })
+        });
+
+        for (var k = 0; k < calls.length; k++) {
+          var call = calls[k];
+          var args = {};
+          try { args = JSON.parse(call.function.arguments || "{}"); } catch (e) { args = {}; }
+          thinkingLines.push((steps.length + 1) + ". 调用工具：" + call.function.name + "  参数：" + JSON.stringify(args));
+
+          var toolResult;
+          if (call.function.name === "query_weather") {
+            toolResult = await runWeatherTool(args);
+          } else {
+            toolResult = { ok: false, forModel: JSON.stringify({ error: "未知工具：" + call.function.name }), args: args };
+          }
+
+          steps.push({ name: call.function.name, args: toolResult.args || args, result: toolResult.forModel });
+          addMessage("tool", "调用工具：" + call.function.name + "\n参数：" + JSON.stringify(toolResult.args || args) + "\n返回：\n" + toolResult.forModel);
+
+          working.push({ role: "tool", tool_call_id: call.id, content: toolResult.forModel });
+        }
+
+        bubbleEl.textContent = "";
+        continue;
+      }
+
+      working.push({ role: "assistant", content: content });
+      break;
+    }
+
+    // 只保留最终的用户/助手轮次作为下文记忆
+    messages.push({ role: "user", content: userText });
+    messages.push({ role: "assistant", content: working[working.length - 1].content || bubbleEl.textContent || "" });
+
+    thinkingLines.push((steps.length + 1) + ". 根据工具结果生成最终回答");
+    return { steps: steps, thinking: thinkingLines.join("\n") };
+  }
+
+  async function handleSend(text) {
+    if (busy || !text) return;
+    addMessage("user", text);
+    inputEl.value = "";
+    setBusy(true);
+
+    var bubble = addMessage("assistant", "");
+    var spin = document.createElement("span");
+    spin.className = "spin";
+    bubble.appendChild(spin);
+
+    var historyText = messages.filter(function (m) { return m.role === "user"; }).map(function (m) { return m.content; }).join(" ");
+
+    try {
+      if (cloudReady) {
+        bubble.innerHTML = "";
+        var r = await cloudAnswer(text, bubble);
+        addLog(text, r.steps, "", r.thinking);
+        showEngine("cloud");
+      } else {
+        bubble.innerHTML = "";
+        var local = await localAnswer(text, historyText);
+        bubble.textContent = local.output;
+        addLog(text, local.steps, "云端模型不可用，已由本地规则引擎完成本次查询", "未调用云端模型（" + (cloudError || "模型未就绪") + "）");
+        showEngine("local", cloudError);
+      }
+    } catch (err) {
+      var code = (err && err.error && err.error.code) || "";
+      var detail = (err && err.error && err.error.message) || (err && err.message) || String(err);
+      // 云端调用失败时退到本地引擎，并明确告知用户
+      try {
+        bubble.innerHTML = "";
+        var fb = await localAnswer(text, historyText);
+        bubble.textContent = fb.output;
+        addLog(text, fb.steps, "云端模型调用失败（" + (code || "unknown") + "），已用本地规则引擎回答", "云端错误：" + detail);
+        showEngine("local", code + " " + detail);
+      } catch (err2) {
+        bubble.textContent = "查询失败：" + detail;
+        addLog(text, [], "查询失败", "");
+      }
+    } finally {
+      setBusy(false);
+      inputEl.focus();
+    }
+  }
+
+  // =====================================================================
+  // 启动
+  // =====================================================================
+  var EXAMPLES = ["广州今天天气怎么样？", "肇庆未来 3 天会下雨吗？", "杭州明天要穿外套吗？", "上海这周温度多少？"];
+
+  function renderChips() {
+    var box = $("chips");
+    EXAMPLES.forEach(function (t) {
+      var b = document.createElement("button");
+      b.type = "button";
+      b.textContent = t;
+      b.addEventListener("click", function () { handleSend(t); });
+      box.appendChild(b);
+    });
+  }
+
+  async function initCloud() {
+    var tag = $("modelTag");
+    try {
+      if (!window.WorkBuddyCloud || !window.WorkBuddyCloud.createWorkBuddyCloud) {
+        throw new Error("SDK 未加载");
+      }
+      cloud = window.WorkBuddyCloud.createWorkBuddyCloud({
+        endpoint: PUBLIC_CONFIG.endpoint,
+        oauthRelayBaseUrl: PUBLIC_CONFIG.oauthRelayBaseUrl,
+        publishableKey: PUBLIC_CONFIG.publishableKey
+      });
+
+      var models = await cloud.llm.models.list();
+      if (!models || !models.length) {
+        throw new Error("当前应用没有可用模型");
+      }
+      var picked = models.filter(function (m) { return m.disabled !== true; })[0] || models[0];
+      modelId = picked.id;
+      modelLabel = picked.name || picked.id;
+      cloudReady = true;
+      tag.className = "tag ok";
+      tag.textContent = "模型：" + modelLabel;
+    } catch (err) {
+      cloudReady = false;
+      cloudError = (err && err.message) || String(err);
+      tag.className = "tag warn";
+      tag.textContent = "模型不可用，已切换本地引擎";
+      tag.title = cloudError;
+      showEngine("local", cloudError);
+    }
+  }
+
+  $("composer").addEventListener("submit", function (e) {
+    e.preventDefault();
+    handleSend(inputEl.value.trim());
+  });
+  $("clearBtn").addEventListener("click", function () {
+    messages = [];
+    lastCity = "";
+    conversationId = "weather-" + Math.random().toString(36).slice(2, 10);
+    chatEl.innerHTML = "";
+    var h = document.createElement("div");
+    h.className = "hint";
+    h.id = "hint";
+    h.textContent = "对话已清空。输入城市 + 时间即可查询真实天气。";
+    chatEl.appendChild(h);
+    hintEl = h;
+    logsEl.innerHTML = '<div class="hint">暂无推理日志，发送天气问题后会自动记录。</div>';
+  });
+
+  loadCityTable().then(function () {
+    renderChips();
+    initCloud();
+    inputEl.focus();
+  });
+})();
+</script>
+</body>
+</html>

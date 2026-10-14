@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# 虚拟环境
+venv/
+.venv/
+env/
+
+# 环境变量与密钥
+.env
+.env.*
+!.env.example
+
+# Streamlit 本地状态
+.streamlit/secrets.toml
+
+# 本地运行日志与工作台临时文件
+streamlit_latest.log
+streamlit_latest.err
+.workbuddy/
+.wbapp_*
+
+# IDE 与系统文件
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
