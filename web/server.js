@@ -144,9 +144,10 @@ function serveApi(res, pathname, query) {
         name: name,
         count: "10",
         language: query.get("language") || "zh",
-        format: "json"
+        format: "json",
+        countryCode: query.get("country_code") || "CN"
       }).toString();
-    proxyJson(res, HOST_GEOCODE, target, "geocode:" + name + ":" + query.get("language"));
+    proxyJson(res, HOST_GEOCODE, target, "geocode:" + name + ":" + (query.get("parent") || "") + ":" + query.get("language"));
     return;
   }
 

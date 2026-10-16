@@ -4,6 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>AI 天气查询 Agent</title>
+<!-- 云端 SDK：仅当 USE_CLOUD_LLM 为 true 时才会被初始化，默认保留以便随时重新启用 -->
 <script src="https://cdn.jsdelivr.net/npm/@tencent-ai/workbuddy-cloud-sdk@dev/lib/index.global.js"></script>
 <style>
   :root {
@@ -134,7 +135,7 @@
   <h1>🌤️ AI 天气查询 Agent</h1>
   <span class="tag" id="modelTag">模型加载中…</span>
   <span class="tag muted">数据源：Open-Meteo 真实预报</span>
-  <span class="tag muted" id="engineTag">引擎：WorkBuddy 云端模型</span>
+  <span class="tag muted" id="engineTag">引擎：本地规则解析</span>
   <span class="spacer"></span>
   <button id="clearBtn">清空对话</button>
 </header>
@@ -145,7 +146,7 @@
     <div class="chips" id="chips"></div>
     <div id="chat">
       <div class="hint" id="hint">
-        问我任意中国城市的真实天气，例如「广州今天天气怎么样」「肇庆未来 3 天会下雨吗」。
+        问我任意中国城市、区县的真实天气，例如「广州今天天气怎么样」「肇庆高要今天温度」「肇庆市高要区明天会下雨吗」。
         我会先调用天气工具取真实数据，再根据数据回答，并把工具调用过程记录在右边的推理日志里。
       </div>
     </div>
@@ -174,10 +175,18 @@
     publishableKey: "wbpk_i9zyhcjRE7Qmmsm3hrL8sT_RvYQGCX7NFpggQzsVuwFeqGEjlQ0zPZc"
   };
 
+  // ---------------------------------------------------------------------
+  // 云端模型总开关
+  // false = 完全关闭云端大模型调用（不消耗云服务资源点），全部回答由本地规则引擎生成
+  // true  = 重新启用 WorkBuddy 云端模型
+  // ---------------------------------------------------------------------
+  var USE_CLOUD_LLM = false;
+
   var SYSTEM_PROMPT =
     "你是一个严格的 AI 天气查询 Agent。所有天气、温度、降雨、湿度、风力问题都必须调用 query_weather 工具，" +
+    "city 参数必须保留用户输入的完整地点层级，例如‘肇庆高要’或‘肇庆市高要区’，不能只传上级市；" +
     "不允许凭记忆或推测回答天气。用户说“明天”时 start_offset 传 1，“后天”传 2，“大后天”传 3，" +
-    "“未来 N 天”“这周”时 days 传对应天数（最多 16）。工具的返回是唯一事实来源，" +
+    "“未来 N 天”“这周”时 days 传对应天数（最多 16）。如果工具返回地点级别为 city_fallback，必须明确告知用户已从区县降级到市级。工具的返回是唯一事实来源，" +
     "温度、天气、湿度、风力、降水概率必须原样使用，不得修改、四舍五入或补充。" +
     "如果工具返回错误（例如城市不存在），必须如实告知用户，不得编造天气。" +
     "回答要自然、简洁、使用中文，可以在数据之后补一句生活提示（是否需要带伞、如何穿衣）。";
@@ -186,13 +195,13 @@
     type: "function",
     function: {
       name: "query_weather",
-      description: "查询指定中国城市的真实天气预报，返回每天的日期、星期、天气、最高温、最低温、湿度、风力、降水概率、紫外线。",
+      description: "查询中国市、区、县的真实天气预报。优先定位区县，区县无数据时返回上级市并标记降级。",
       parameters: {
         type: "object",
         properties: {
-          city: { type: "string", description: "城市名称，例如 广州、肇庆、杭州" },
-          days: { type: "integer", description: "查询天数，1 到 16，默认 1" },
-          start_offset: { type: "integer", description: "从今天起偏移几天开始：0=今天，1=明天，2=后天" }
+          city: { type: "string", description: "完整地点名称，例如 广州、肇庆、高要区、肇庆高要、肇庆市高要区" },
+          days: { type: "integer", minimum: 1, maximum: 16, description: "查询天数，1 到 16，默认 1" },
+          start_offset: { type: "integer", minimum: 0, maximum: 15, description: "从今天起偏移几天开始：0=今天，1=明天，2=后天" }
         },
         required: ["city"]
       }
@@ -254,35 +263,82 @@
     return name;
   }
 
-  function resolveCity(raw) {
+  function normalizeLocationName(raw) {
     var name = normalizeCity(raw);
+    var suffixes = ["特别行政区", "自治区", "自治州", "地区", "省", "市", "区", "县", "旗", "盟"];
+    for (var i = 0; i < suffixes.length; i++) {
+      var suffix = suffixes[i];
+      if (name.slice(-suffix.length) === suffix && name.length > suffix.length) {
+        name = name.slice(0, -suffix.length);
+        break;
+      }
+    }
+    return CITY_ALIASES[name] || name;
+  }
+
+  function cleanLocationText(text) {
+    var value = String(text || "").replace(/\s+/g, "").replace(/^[，。？！,!?]+|[，。？！,!?]+$/g, "");
+    value = value.replace(/^(请问|帮我查一下|帮我查|查询|查一下|查查|看看|我想知道|告诉我|那|呢)+/, "");
+    value = value.replace(/^(今天|明天|明日|后天|大后天|未来\d+天|接下来\d+天)/, "");
+    value = value.split(/今天|明天|明日|后天|大后天|未来|接下来|这几天|\d+天|[一二两三四五六七八九十]天|天气|气温|温度|降雨|下雨|有雨|雨吗|下雪|晴|阴|多云|预报|气象|风力|风速|湿度|冷不冷|热不热|穿什么|带伞/)[0];
+    value = value.replace(/(?:现在|当前|目前|今日|今天|明天|明日|后天|大后天|会不会|是否|有没有|有无|会|可能|的|不)+$/, "");
+    return value.replace(/(分别|各自)$/, "");
+  }
+
+  function makeCity(name, record, requested, matchLevel) {
+    return {
+      name: name,
+      admin: record.admin || "",
+      lat: record.lat,
+      lon: record.lon,
+      requested: requested || name,
+      matchLevel: matchLevel || "direct"
+    };
+  }
+
+  function staticMatchLevel(record) {
+    return /市/.test(String(record && record.admin || "")) ? "district" : "direct";
+  }
+
+  function resolveCity(raw) {
+    var original = String(raw || "").replace(/\s+/g, "");
+    var name = normalizeLocationName(raw);
     if (!name) return null;
     if (cityTable[name]) {
-      return { name: name, admin: cityTable[name].admin, lat: cityTable[name].lat, lon: cityTable[name].lon };
+      return makeCity(name, cityTable[name], original, staticMatchLevel(cityTable[name]));
     }
     if (CITY_ALIASES[name] && cityTable[CITY_ALIASES[name]]) {
       var alias = CITY_ALIASES[name];
-      return { name: alias, admin: cityTable[alias].admin, lat: cityTable[alias].lat, lon: cityTable[alias].lon };
+      return makeCity(alias, cityTable[alias], original, staticMatchLevel(cityTable[alias]));
     }
+    var matches = [];
     for (var i = 0; i < cityNames.length; i++) {
       if (name.indexOf(cityNames[i]) >= 0) {
-        var c = cityNames[i];
-        return { name: c, admin: cityTable[c].admin, lat: cityTable[c].lat, lon: cityTable[c].lon };
+        matches.push(cityNames[i]);
       }
     }
-    return null;
+    if (!matches.length) return null;
+    matches.sort(function (a, b) {
+      var aAdmin = normalizeLocationName(cityTable[a].admin || "");
+      var bAdmin = normalizeLocationName(cityTable[b].admin || "");
+      var aChild = matches.some(function (other) { return other !== a && aAdmin.indexOf(normalizeLocationName(other)) >= 0; });
+      var bChild = matches.some(function (other) { return other !== b && bAdmin.indexOf(normalizeLocationName(other)) >= 0; });
+      if (aChild !== bChild) return aChild ? -1 : 1;
+      if (a.length !== b.length) return b.length - a.length;
+      return 0;
+    });
+    var selected = matches[0];
+    // 输入明确带区/县但坐标表只命中了上级市时，交给在线地名库继续解析。
+    if (matches.length === 1 && normalizeLocationName(selected) !== name && /(?:区|县|镇|乡)/.test(original)) return null;
+    var level = matches.length > 1 ? "district" : staticMatchLevel(cityTable[selected]);
+    return makeCity(selected, cityTable[selected], original, level);
   }
 
   function extractCity(text) {
-    text = String(text || "");
-    if (!text) return "";
-    for (var a in CITY_ALIASES) { if (text.indexOf(a) >= 0) return CITY_ALIASES[a]; }
-    for (var i = 0; i < cityNames.length; i++) { if (text.indexOf(cityNames[i]) >= 0) return cityNames[i]; }
-    var m = text.match(/([\u4e00-\u9fa5]{2,8}?(?:市|区|县|州))/);
-    if (m) { var r = resolveCity(m[1]); if (r) return r.name; }
-    var m2 = text.match(/([\u4e00-\u9fa5]{2,6}?)(?:的)?(?:今天|明天|后天|大后天|未来|最近|接下来)?(?:天气|气温|温度|降雨|下雨|湿度|风力|冷不冷|热不热)/);
-    if (m2) { var r2 = resolveCity(m2[1]); if (r2) return r2.name; }
-    return "";
+    var location = cleanLocationText(text);
+    if (!location) return "";
+    var resolved = resolveCity(location);
+    return resolved ? resolved.name : location;
   }
 
   // =====================================================================
@@ -359,6 +415,104 @@
     throw new Error("天气数据获取失败（" + errors.join("；") + "）");
   }
 
+  async function loadGeocodeJson(name, parent) {
+    var query = "/api/geocode?name=" + encodeURIComponent(name) + "&language=zh&country_code=CN";
+    if (parent) query += "&parent=" + encodeURIComponent(parent);
+    var direct = "https://geocoding-api.open-meteo.com/v1/search?" + new URLSearchParams({
+      name: name, count: "10", language: "zh", format: "json", countryCode: "CN"
+    }).toString();
+    var errors = [];
+    try {
+      var viaProxy = await fetch(query);
+      if (viaProxy.ok) return await viaProxy.json();
+      errors.push("地名代理 HTTP " + viaProxy.status);
+    } catch (e) { errors.push("地名代理不可达"); }
+    try {
+      var response = await fetch(direct);
+      if (response.ok) return await response.json();
+      errors.push("地名直连 HTTP " + response.status);
+    } catch (e) { errors.push("地名直连不可达"); }
+    throw new Error("地名服务请求失败（" + errors.join("；") + "）");
+  }
+
+  function locationVariants(raw) {
+    var original = String(raw || "").replace(/\s+/g, "");
+    var regionMatch = original.match(/^(.+?(?:省|自治区|特别行政区))(.+)$/);
+    var core = regionMatch ? regionMatch[2] : original;
+    var region = regionMatch ? regionMatch[1] : "";
+    var variants = [{ query: core, parent: region, level: "direct" }];
+    var parentMatch = core.match(/^(.+?(?:市|州|地区|盟))(.+)$/);
+    if (parentMatch) {
+      variants.unshift({ query: parentMatch[2], parent: parentMatch[1], level: "district" });
+      variants.push({ query: parentMatch[1], parent: region, level: "city_fallback" });
+    } else if (core.length >= 4) {
+      var parents = [];
+      for (var size = 2; size <= Math.min(6, core.length - 2); size++) {
+        parents.push(core.slice(0, size));
+        variants.push({ query: core.slice(size), parent: core.slice(0, size), level: "district" });
+      }
+      parents.forEach(function (parent) {
+        variants.push({ query: parent, parent: region, level: "city_fallback" });
+      });
+    }
+    var seen = {};
+    return variants.filter(function (item) {
+      var key = normalizeLocationName(item.query) + "|" + normalizeLocationName(item.parent);
+      if (seen[key]) return false;
+      seen[key] = true;
+      return !!item.query;
+    });
+  }
+
+  function geocodedCity(result, requested, level) {
+    var admin = [result.admin1, result.admin2, result.admin3, result.admin4]
+      .filter(function (value, index, list) { return value && list.indexOf(value) === index; })
+      .join("");
+    return {
+      name: result.name,
+      admin: admin,
+      lat: result.latitude,
+      lon: result.longitude,
+      requested: requested,
+      matchLevel: level || "direct"
+    };
+  }
+
+  async function geocodeCity(raw) {
+    var requested = String(raw || "").replace(/\s+/g, "");
+    var variants = locationVariants(requested);
+    for (var i = 0; i < variants.length; i++) {
+      var variant = variants[i];
+      var payload = await loadGeocodeJson(variant.query, variant.parent);
+      var results = (payload && payload.results) || [];
+      var target = normalizeLocationName(variant.query);
+      var exact = results.filter(function (item) {
+        return normalizeLocationName(item.name) === target;
+      });
+      if (variant.parent) {
+        var parentName = normalizeLocationName(variant.parent);
+        var scoped = exact.filter(function (item) {
+          return [item.admin1, item.admin2, item.admin3].some(function (value) {
+            return normalizeLocationName(value) === parentName;
+          });
+        });
+        if (scoped.length) exact = scoped;
+      }
+      if (exact.length) return geocodedCity(exact[0], requested, variant.level);
+    }
+    return null;
+  }
+
+  async function resolveLocation(raw) {
+    var requested = String(raw || "").replace(/\s+/g, "");
+    var staticCity = resolveCity(requested);
+    if (staticCity) {
+      staticCity.requested = requested;
+      return staticCity;
+    }
+    return await geocodeCity(requested);
+  }
+
   async function fetchForecast(city, startOffset, days) {
     startOffset = Math.max(0, parseInt(startOffset || 0, 10) || 0);
     days = Math.min(16, Math.max(1, parseInt(days || 1, 10) || 1));
@@ -386,6 +540,8 @@
         "星期": weekday,
         "城市": city.name,
         "地区": city.admin,
+        "请求地点": city.requested || city.name,
+        "地点级别": city.matchLevel || "direct",
         "天气": desc[0],
         "天气图标": desc[1],
         "最高温": (high === null || high === undefined) ? "未知" : Math.round(high) + "°C",
@@ -476,7 +632,15 @@
     if (!items.length) return "没有查询到天气数据。";
     var headCity = items[0]["城市"];
     var area = items[0]["地区"] || "";
-    if (area && area !== headCity) headCity += "（" + area + "）";
+    var level = items[0]["地点级别"] || "direct";
+    var requested = items[0]["请求地点"] || headCity;
+    if (level === "district" && area) {
+      headCity += "（区县定位：" + area + "）";
+    } else if (level === "city_fallback") {
+      headCity += "（未找到“" + requested + "”的区县数据，已降级为市级天气）";
+    } else if (area && area !== headCity) {
+      headCity += "（" + area + "）";
+    }
 
     if (items.length === 1) {
       var it = items[0];
@@ -508,21 +672,47 @@
   // 天气工具（供模型调用 + 本地兜底共用）
   // =====================================================================
   async function runWeatherTool(args) {
-    var city = resolveCity(args && args.city);
-    if (!city) {
-      return { ok: false, forModel: JSON.stringify({ error: "未找到城市：" + (args && args.city) + "。请换一个城市名，例如“广州”“杭州”。" }) };
+    var requested = String(args && args.city || "").trim();
+    if (!requested) {
+      return { ok: false, code: "CITY_REQUIRED", forModel: JSON.stringify({ error: "请先提供城市、区或县名称。" }) };
     }
-    var offset = parseInt((args && args.start_offset) || 0, 10) || 0;
-    var days = parseInt((args && args.days) || 1, 10) || 1;
-    var forecast = await fetchForecast(city, offset, days);
+    var offset = parseInt((args && args.start_offset) || 0, 10);
+    var days = parseInt((args && args.days) || 1, 10);
+    if (!Number.isInteger(offset) || offset < 0 || offset > 15) {
+      return { ok: false, code: "INVALID_RANGE", forModel: JSON.stringify({ error: "start_offset 必须是 0 到 15 的整数。" }) };
+    }
+    if (!Number.isInteger(days) || days < 1 || days > 16 || offset + days > 16) {
+      return { ok: false, code: "INVALID_RANGE", forModel: JSON.stringify({ error: "days 必须是 1 到 16 的整数，且不能超出未来 16 天。" }) };
+    }
+    var city;
+    try {
+      city = await resolveLocation(requested);
+    } catch (error) {
+      return { ok: false, code: "GEOCODE_ERROR", forModel: JSON.stringify({ error: "地点服务暂时不可用，请稍后重试。" }) };
+    }
+    if (!city) {
+      return {
+        ok: false,
+        code: "LOCATION_NOT_FOUND",
+        forModel: JSON.stringify({ error: "未找到地点“" + requested + "”，请检查市/区县名称或补充上级城市。" })
+      };
+    }
+    var forecast;
+    try {
+      forecast = await fetchForecast(city, offset, days);
+    } catch (error) {
+      return { ok: false, code: "WEATHER_UPSTREAM_ERROR", forModel: JSON.stringify({ error: "天气数据服务暂时不可用，请稍后重试。" }) };
+    }
     var forModel = JSON.stringify({
       "城市": city.name,
       "地区": city.admin,
+      "请求地点": city.requested,
+      "地点级别": city.matchLevel,
       "数据源": "Open-Meteo 真实预报",
       "当前实况": forecast.current,
       "预报": forecast.items
     });
-    return { ok: true, forecast: forecast, forModel: forModel, args: { city: city.name, days: days, start_offset: offset } };
+    return { ok: true, forecast: forecast, forModel: forModel, args: { city: city.requested, resolved_city: city.name, days: days, start_offset: offset, match_level: city.matchLevel } };
   }
 
   // =====================================================================
@@ -558,6 +748,7 @@
   }
 
   var lastCity = "";
+  var lastLocation = null;
   var lastOffset = 0;
   var lastDays = 1;
 
@@ -568,20 +759,20 @@
       return { output: "内置城市表已收录 " + cityNames.length + " 个中国城市，例如：" + cityNames.slice(0, 20).join("、") + " 等。", steps: [] };
     }
     if (/你是谁|你叫什么|能做什么|会什么|有什么功能|帮助/.test(text)) {
-      return { output: "我是天气查询 Agent：可以查任意中国城市的真实天气（Open-Meteo 数据），支持“明天/后天/未来 N 天/这周”等说法，也听得懂“羊城”“魔都”这类俗称。", steps: [] };
+      return { output: "我是天气查询 Agent：可以查中国城市、区县的真实天气（Open-Meteo 数据），支持“明天/后天/未来 N 天/这周”等说法，也听得懂“羊城”“魔都”这类俗称。", steps: [] };
     }
 
     var hasCityContext = !!lastCity;
     var isWeather = WEATHER_RE.test(text) || (hasCityContext && FOLLOW_RE.test(text));
     if (!isWeather) {
       if (/^(你好|您好|hi|hello|哈喽|在吗)/i.test(text)) {
-        return { output: "你好！告诉我城市和时间就能查真实天气，例如“广州今天天气怎么样”“肇庆未来 3 天会下雨吗”。", steps: [] };
+        return { output: "你好！告诉我城市、区县和时间就能查真实天气，例如“广州今天天气怎么样”“肇庆高要未来 3 天会下雨吗”。", steps: [] };
       }
-      return { output: "我主要负责查天气。你可以告诉我城市和时间，例如：“肇庆未来 3 天天气”“杭州明天冷不冷”。", steps: [] };
+      return { output: "我主要负责查天气。你可以告诉我城市、区县和时间，例如：“肇庆高要未来 3 天天气”“杭州明天冷不冷”。", steps: [] };
     }
 
-    var city = cityInInput || (historyText ? extractCity(historyText) : "") || lastCity;
-    if (!city) return { output: "好的，请告诉我城市名，例如“广州”“肇庆”“杭州”，我就能查到它的真实天气。", steps: [] };
+    var city = cityInInput || (historyText ? extractCity(historyText) : "") || (lastLocation && lastLocation.requested) || lastCity;
+    if (!city) return { output: "好的，请告诉我城市、区或县名称，例如“广州”“肇庆高要”“杭州”，我就能查到它的真实天气。", steps: [] };
 
     var range = timeRange(text);
     if (!range) {
@@ -590,9 +781,10 @@
     var offset = range[0], days = range[1];
 
     var result = await runWeatherTool({ city: city, days: days, start_offset: offset });
-    if (!result.ok) return { output: JSON.parse(result.forModel).error, steps: [] };
+    if (!result.ok) return { output: JSON.parse(result.forModel).error, steps: [{ name: "query_weather", args: { city: city, days: days, start_offset: offset }, result: result.forModel }] };
 
-    lastCity = result.forecast.city.name;
+    lastCity = result.args.city;
+    lastLocation = result.forecast.city;
     lastOffset = offset;
     lastDays = days;
     var output = summarize(result.forecast.items, offset === 0 ? result.forecast.current : null, detectFocus(text));
@@ -673,6 +865,10 @@
     if (mode === "cloud") {
       el.className = "tag ok";
       el.textContent = "引擎：WorkBuddy 云端模型";
+    } else if (mode === "off") {
+      el.className = "tag muted";
+      el.textContent = "引擎：本地规则解析";
+      if (note) el.title = note;
     } else {
       el.className = "tag warn";
       el.textContent = "引擎：本地规则解析（云端模型调用失败）";
@@ -794,8 +990,13 @@
         bubble.innerHTML = "";
         var local = await localAnswer(text, historyText);
         bubble.textContent = local.output;
-        addLog(text, local.steps, "云端模型不可用，已由本地规则引擎完成本次查询", "未调用云端模型（" + (cloudError || "模型未就绪") + "）");
-        showEngine("local", cloudError);
+        if (USE_CLOUD_LLM) {
+          addLog(text, local.steps, "云端模型不可用，已由本地规则引擎完成本次查询", "未调用云端模型（" + (cloudError || "模型未就绪") + "）");
+          showEngine("local", cloudError);
+        } else {
+          addLog(text, local.steps, "", "未调用云端模型：已手动关闭，直接由本地规则引擎解析并查询真实天气");
+          showEngine("off", "已手动关闭云端模型");
+        }
       }
     } catch (err) {
       var code = (err && err.error && err.error.code) || "";
@@ -820,7 +1021,7 @@
   // =====================================================================
   // 启动
   // =====================================================================
-  var EXAMPLES = ["广州今天天气怎么样？", "肇庆未来 3 天会下雨吗？", "杭州明天要穿外套吗？", "上海这周温度多少？"];
+  var EXAMPLES = ["广州今天天气怎么样？", "肇庆高要今天温度？", "肇庆市高要区明天会下雨吗？", "上海这周温度多少？"];
 
   function renderChips() {
     var box = $("chips");
@@ -835,6 +1036,18 @@
 
   async function initCloud() {
     var tag = $("modelTag");
+
+    // 手动关闭云端模型：不初始化 SDK、不发起任何模型请求
+    if (!USE_CLOUD_LLM) {
+      cloudReady = false;
+      cloudError = "已手动关闭云端模型";
+      tag.className = "tag muted";
+      tag.textContent = "云端模型：已关闭";
+      tag.title = "在 index.html 里把 USE_CLOUD_LLM 改回 true 即可重新启用";
+      showEngine("off", "已手动关闭云端模型，全部回答由本地规则引擎生成（不消耗云服务资源点）");
+      return;
+    }
+
     try {
       if (!window.WorkBuddyCloud || !window.WorkBuddyCloud.createWorkBuddyCloud) {
         throw new Error("SDK 未加载");
