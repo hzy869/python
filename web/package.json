@@ -2,9 +2,9 @@
   "name": "weather-agent-web",
   "version": "1.0.0",
   "private": true,
-  "description": "AI 天气查询 Agent 网页版（静态页面 + Open-Meteo 代理）",
-  "main": "server.js",
+  "description": "AI 天气查询 Agent 网页版（Python SQLite 认证 + Open-Meteo 代理）",
+  "main": "server.py",
   "scripts": {
-    "start": "node server.js"
+    "start": "python server.py"
   }
 }

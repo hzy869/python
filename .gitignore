@@ -22,8 +22,13 @@ env/
 # 本地运行日志与工作台临时文件
 streamlit_latest.log
 streamlit_latest.err
+streamlit_app_*.log
+streamlit_app_*.err
 .workbuddy/
 .wbapp_*
+
+# Python 网页版本地用户数据（不要提交账号、聊天记录数据库）
+web/data/*.db
 
 # IDE 与系统文件
 .idea/

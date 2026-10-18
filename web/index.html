@@ -18,17 +18,73 @@
     --ok: #059669;
     --warn: #b45309;
     --err: #dc2626;
+    --overlay-dark: rgba(15, 23, 42, .58);
+    --overlay-blue: rgba(30, 64, 175, .38);
   }
   * { box-sizing: border-box; }
   body {
     margin: 0;
     background: var(--bg);
     color: var(--text);
+    min-height: 100vh;
+    position: relative;
+    isolation: isolate;
+    overflow-x: hidden;
     font: 15px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
       "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
   }
+  /* 背景图层由 JS 根据查询地点切换，默认使用渐变兜底。 */
+  .bg-layer {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background-position: center;
+    background-size: cover;
+    background-repeat: no-repeat;
+    background-color: #475569;
+    opacity: 0;
+    transform: scale(1.02);
+    transition: opacity 1300ms ease, transform 12s ease;
+  }
+  .bg-layer.active { opacity: 1; transform: scale(1); }
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    background: linear-gradient(135deg, var(--overlay-dark), var(--overlay-blue));
+  }
+  [hidden] { display: none !important; }
+  .auth-shell {
+    min-height: 100vh; display: grid; place-items: center; padding: 24px;
+    position: relative; z-index: 4;
+  }
+  .auth-panel {
+    width: min(100%, 430px); padding: 30px; border: 1px solid rgba(255,255,255,.55);
+    border-radius: 22px; background: rgba(255,255,255,.9); box-shadow: 0 24px 70px rgba(15,23,42,.28);
+    backdrop-filter: blur(18px);
+  }
+  .auth-brand { text-align: center; margin-bottom: 20px; }
+  .auth-brand .emoji { font-size: 38px; display: block; margin-bottom: 6px; }
+  .auth-brand h1 { margin: 0; font-size: 24px; color: #0f172a; }
+  .auth-brand p { margin: 6px 0 0; color: var(--muted); font-size: 13px; }
+  .auth-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 4px; margin-bottom: 18px; border-radius: 11px; background: #eef2ff; }
+  .auth-tab { border: 0; background: transparent; color: #64748b; padding: 8px; transition: background .2s ease, color .2s ease, transform .2s ease; }
+  .auth-tab.active { background: #fff; color: var(--brand); box-shadow: 0 4px 12px rgba(37,99,235,.12); }
+  .auth-tab:hover { transform: translateY(-1px); }
+  .auth-field { display: grid; gap: 6px; margin-bottom: 13px; }
+  .auth-field label { color: #334155; font-size: 13px; font-weight: 600; }
+  .auth-field input { width: 100%; padding: 11px 12px; border: 1px solid #dbe2ea; border-radius: 10px; outline: none; font: inherit; color: #0f172a; background: rgba(255,255,255,.86); }
+  .auth-field input:focus { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(37,99,235,.12); }
+  .auth-submit { width: 100%; margin-top: 4px; padding: 11px; }
+  .auth-status { min-height: 22px; margin-top: 12px; text-align: center; font-size: 13px; color: var(--muted); }
+  .auth-status.error { color: #b91c1c; }
+  .auth-status.ok { color: #047857; }
+  .auth-note { margin: 14px 0 0; text-align: center; color: #64748b; font-size: 11.5px; }
   header {
-    background: var(--panel);
+    background: rgba(255, 255, 255, .92);
     border-bottom: 1px solid var(--line);
     padding: 14px 22px;
     display: flex;
@@ -38,6 +94,7 @@
     position: sticky;
     top: 0;
     z-index: 5;
+    backdrop-filter: blur(12px);
   }
   header h1 { font-size: 17px; margin: 0; font-weight: 650; }
   .tag {
@@ -53,22 +110,42 @@
   .tag.warn { background: #fffbeb; color: var(--warn); border-color: #fde68a; }
   main {
     display: grid;
-    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
-    gap: 16px;
-    padding: 16px 22px 28px;
-    max-width: 1400px;
+    grid-template-columns: minmax(0, 4fr) minmax(320px, 2fr);
+    gap: 22px;
+    padding: 24px 32px 36px;
+    max-width: 1600px;
     margin: 0 auto;
     align-items: start;
+    position: relative;
+    z-index: 2;
   }
   @media (max-width: 980px) { main { grid-template-columns: 1fr; } }
   .card {
-    background: var(--panel);
+    background: rgba(255, 255, 255, .93);
     border: 1px solid var(--line);
     border-radius: 12px;
     padding: 16px;
+    box-shadow: 0 12px 35px rgba(15, 23, 42, .12);
+    backdrop-filter: blur(10px);
   }
+  .side-column { display: grid; gap: 16px; }
   .card h2 { font-size: 14px; margin: 0 0 12px; font-weight: 650; color: var(--muted); }
-  #chat { display: flex; flex-direction: column; gap: 12px; min-height: 220px; }
+  /* 主对话区域放大，并取消白色卡片底色，让背景图完整透出。 */
+  .conversation-card {
+    min-height: calc(100vh - 128px);
+    padding: clamp(24px, 3vw, 42px);
+    background: transparent;
+    border-color: transparent;
+    box-shadow: none;
+  }
+  .conversation-card > * { width: 100%; max-width: 980px; margin-left: auto; margin-right: auto; }
+  .conversation-card h2,
+  .conversation-card .hint,
+  .conversation-card .bubble { color: #000; }
+  .conversation-card h2,
+  .conversation-card .hint,
+  .conversation-card .composer-hint { text-shadow: 0 0 6px rgba(255, 255, 255, .95); }
+  #chat { display: flex; flex-direction: column; gap: 18px; min-height: 520px; }
   .msg { display: flex; gap: 10px; align-items: flex-start; }
   .avatar {
     width: 30px; height: 30px; flex: 0 0 30px;
@@ -85,6 +162,20 @@
     max-width: 100%;
     overflow-x: auto;
   }
+  /* 对话气泡完全透明，只保留文字间距；白色发光阴影帮助黑字在暗色蒙层上阅读。 */
+  .conversation-card .bubble {
+    background: transparent !important;
+    border-color: transparent;
+    border-radius: 0;
+    padding: 8px 0;
+    font-size: 16px;
+    line-height: 1.85;
+    text-shadow: 0 0 6px rgba(255, 255, 255, .95), 0 1px 2px rgba(255, 255, 255, .85);
+  }
+  .conversation-card .msg.user .bubble,
+  .conversation-card .msg.tool .bubble { color: #000; }
+  .conversation-card .msg.tool .bubble { font-size: 13px; }
+  .conversation-card .msg { gap: 14px; }
   .msg.user .avatar { background: #dbeafe; }
   .msg.user .bubble { background: var(--brand-soft); border-color: #dbeafe; }
   .msg.tool .bubble {
@@ -93,19 +184,54 @@
     font-size: 12.5px; line-height: 1.55;
   }
   .composer { display: flex; gap: 10px; margin-top: 14px; }
+  .input-shell { position: relative; flex: 1; min-width: 0; }
   .composer input {
-    flex: 1; padding: 11px 13px;
+    width: 100%; padding: 12px 42px 12px 14px;
     border: 1px solid var(--line); border-radius: 10px;
     font-size: 14.5px; font-family: inherit; outline: none; background: #fff; color: var(--text);
   }
   .composer input:focus { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(37,99,235,.12); }
+  .composer input::placeholder { color: #64748b; }
+  .input-clear {
+    position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+    width: 25px; height: 25px; padding: 0; border: 0; border-radius: 50%;
+    background: transparent; color: #64748b; font-size: 18px; line-height: 1;
+    opacity: 0; pointer-events: none; transition: opacity .2s ease, background .2s ease;
+  }
+  .input-clear.visible { opacity: 1; pointer-events: auto; }
+  .input-clear:hover { background: rgba(148, 163, 184, .2); color: #0f172a; }
+  .suggestions {
+    position: absolute; left: 0; right: 0; top: calc(100% + 7px); z-index: 20;
+    display: grid; gap: 2px; padding: 6px; max-height: 250px; overflow-y: auto;
+    border: 1px solid rgba(148, 163, 184, .5); border-radius: 12px;
+    background: rgba(255, 255, 255, .96); box-shadow: 0 14px 35px rgba(15, 23, 42, .2);
+  }
+  .suggestions[hidden] { display: none; }
+  .suggestion-item {
+    display: flex; align-items: center; width: 100%; text-align: left;
+    padding: 8px 10px; border: 0; border-radius: 8px; background: transparent; color: #0f172a;
+    font-size: 13px; transition: background .2s ease, transform .2s ease;
+  }
+  .suggestion-item:hover, .suggestion-item:focus { background: #eff6ff; transform: translateX(2px); outline: none; }
+  .composer-hint { color: var(--muted); font-size: 12.5px; margin-top: 7px; }
+  .status { min-height: 23px; margin-top: 8px; font-size: 13px; color: var(--muted); }
+  .status.loading { color: var(--brand); }
+  .status.ok { color: var(--ok); }
+  .status.error { color: var(--err); }
+  .status.loading { display: inline-flex; align-items: center; gap: 7px; }
+  .status.loading::before {
+    content: ""; width: 12px; height: 12px; flex: 0 0 12px; border-radius: 50%;
+    border: 2px solid rgba(37, 99, 235, .22); border-top-color: var(--brand); animation: sp .8s linear infinite;
+  }
   button {
     font: inherit; border-radius: 10px; border: 1px solid var(--line);
     background: #fff; color: var(--text); padding: 9px 14px; cursor: pointer;
+    transition: background .2s ease, border-color .2s ease, box-shadow .2s ease, transform .2s ease;
   }
   button:hover { border-color: #cbd5e1; background: #f8fafc; }
   button.primary { background: var(--brand); color: #fff; border-color: var(--brand); }
   button.primary:hover { background: #1d4ed8; }
+  .chips button:hover, button.primary:hover, #clearBtn:hover, #clearHistoryBtn:hover { transform: translateY(-1px); }
   button:disabled { opacity: .55; cursor: not-allowed; }
   .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
   .chips button { font-size: 13px; padding: 7px 11px; background: #f8fafc; }
@@ -128,20 +254,106 @@
   @keyframes sp { to { transform: rotate(360deg); } }
   .row { display: flex; align-items: center; gap: 8px; }
   .spacer { flex: 1; }
+  .history-toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .history-toolbar h2 { margin: 0; }
+  .history-toolbar button { margin-left: auto; font-size: 12px; padding: 5px 9px; }
+  #historyList { display: grid; gap: 7px; max-height: 330px; overflow-y: auto; padding: 2px 4px 2px 0; }
+  #historyList::-webkit-scrollbar, .suggestions::-webkit-scrollbar { width: 7px; }
+  #historyList::-webkit-scrollbar-thumb, .suggestions::-webkit-scrollbar-thumb { background: rgba(100,116,139,.35); border-radius: 999px; }
+  .history-item {
+    display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+    padding: 8px 9px; border-radius: 9px; background: #f8fafc; border-color: #e2e8f0;
+    transition: background .2s ease, border-color .2s ease, transform .2s ease, box-shadow .2s ease;
+  }
+  .history-item:hover { background: #eff6ff; border-color: #bfdbfe; transform: translateX(2px); box-shadow: 0 5px 14px rgba(37,99,235,.1); }
+  .history-item.status-error { background: #fffafa; border-color: #fecaca; }
+  .history-item.status-error:hover { background: #fff1f2; border-color: #fda4af; }
+  .history-requery { display: flex; align-items: center; gap: 7px; flex: 1; min-width: 0; padding: 0; border: 0; background: transparent; text-align: left; }
+  .history-requery:hover { background: transparent; }
+  .history-item .history-place { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .history-item .history-time { color: var(--muted); font-size: 11.5px; margin-left: auto; white-space: nowrap; }
+  .history-item .history-badge { flex: 0 0 auto; font-size: 10.5px; padding: 1px 6px; border-radius: 999px; color: #047857; background: #ecfdf5; }
+  .history-item.status-error .history-badge { color: #b91c1c; background: #fef2f2; }
+  .history-item .history-delete { flex: 0 0 auto; padding: 2px 6px; border: 0; background: transparent; color: #94a3b8; font-size: 16px; line-height: 1; }
+  .history-item .history-delete:hover { color: #dc2626; background: #fee2e2; }
+  .weather-result { margin-top: 16px; border: 1px solid rgba(191, 219, 254, .85); border-radius: 13px; background: rgba(239, 246, 255, .28); padding: 14px; }
+  .result-head { display: flex; align-items: flex-start; gap: 10px; }
+  .result-head h3 { margin: 1px 0 2px; font-size: 18px; }
+  .result-head p { margin: 0; color: var(--muted); font-size: 12.5px; }
+  .eyebrow { color: var(--brand); font-size: 11px; font-weight: 700; letter-spacing: .08em; }
+  .current-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(108px, 1fr)); gap: 8px; margin-top: 12px; }
+  .metric { background: rgba(255,255,255,.5); border: 1px solid rgba(191,219,254,.8); border-radius: 9px; padding: 8px; }
+  .metric .label { color: var(--muted); display: block; font-size: 11px; }
+  .metric .value { display: block; font-weight: 650; margin-top: 2px; }
+  .forecast-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin-top: 12px; }
+  .forecast-card { background: rgba(255,255,255,.5); border: 1px solid rgba(226,232,240,.95); border-radius: 9px; padding: 9px; }
+  .forecast-card .date { font-weight: 650; font-size: 13px; }
+  .forecast-card .weather { margin: 4px 0; }
+  .forecast-card .detail { color: var(--muted); font-size: 11.5px; line-height: 1.55; }
+  .result-enter { animation: resultIn .45s ease both; }
+  @keyframes resultIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+  .loading-inline { display: inline-flex; align-items: center; gap: 8px; color: #000; }
+  .loading-label::after { content: ""; display: inline-block; width: 18px; text-align: left; animation: dots 1.2s steps(4, end) infinite; }
+  @keyframes dots { 0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75%, 100% { content: "..."; } }
+  @media (max-width: 620px) {
+    header { padding: 12px 14px; }
+    main { padding: 12px 14px 22px; }
+    .conversation-card { min-height: auto; padding: 20px 16px; }
+    #chat { min-height: 320px; }
+    .composer { flex-wrap: wrap; }
+    .input-shell { flex-basis: 100%; }
+    .current-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .weather-result { padding: 11px; }
+  }
 </style>
 </head>
 <body>
+<div id="bgA" class="bg-layer active" aria-hidden="true"></div>
+<div id="bgB" class="bg-layer" aria-hidden="true"></div>
+<section id="authView" class="auth-shell" aria-label="账号登录与注册">
+  <div class="auth-panel">
+    <div class="auth-brand">
+      <span class="emoji">🌤️</span>
+      <h1>AI 天气查询 Agent</h1>
+      <p>登录后即可使用天气查询并同步聊天记录</p>
+    </div>
+    <div class="auth-tabs" role="tablist">
+      <button class="auth-tab active" id="loginTab" type="button" role="tab">登录</button>
+      <button class="auth-tab" id="registerTab" type="button" role="tab">注册</button>
+    </div>
+    <form id="authForm" novalidate>
+      <div class="auth-field">
+        <label for="authUsername">用户名</label>
+        <input id="authUsername" autocomplete="username" maxlength="32" placeholder="3-32位字母、数字或下划线" required />
+      </div>
+      <div class="auth-field">
+        <label for="authPassword">密码</label>
+        <input id="authPassword" type="password" autocomplete="current-password" minlength="6" maxlength="128" placeholder="至少6位密码" required />
+      </div>
+      <div class="auth-field" id="confirmPasswordField" hidden>
+        <label for="authConfirmPassword">确认密码</label>
+        <input id="authConfirmPassword" type="password" autocomplete="new-password" minlength="6" maxlength="128" placeholder="再次输入密码" />
+      </div>
+      <button class="primary auth-submit" id="authSubmit" type="submit">登录</button>
+    </form>
+    <div id="authStatus" class="auth-status" aria-live="polite"></div>
+    <p class="auth-note">账号和聊天记录保存在本机 SQLite 数据库中，不会写入浏览器密码存储。</p>
+  </div>
+</section>
+<div id="appView" hidden>
 <header>
   <h1>🌤️ AI 天气查询 Agent</h1>
   <span class="tag" id="modelTag">模型加载中…</span>
   <span class="tag muted">数据源：Open-Meteo 真实预报</span>
   <span class="tag muted" id="engineTag">引擎：本地规则解析</span>
+  <span class="tag ok" id="userTag"></span>
   <span class="spacer"></span>
+  <button id="logoutBtn" type="button">退出登录</button>
   <button id="clearBtn">清空对话</button>
 </header>
 
 <main>
-  <section class="card">
+  <section class="card conversation-card">
     <h2>对话</h2>
     <div class="chips" id="chips"></div>
     <div id="chat">
@@ -150,17 +362,41 @@
         我会先调用天气工具取真实数据，再根据数据回答，并把工具调用过程记录在右边的推理日志里。
       </div>
     </div>
+    <div id="weatherResult" class="weather-result" hidden aria-live="polite"></div>
     <form class="composer" id="composer">
-      <input id="input" placeholder="例如：杭州明天要穿外套吗？" autocomplete="off" />
+      <div class="input-shell">
+        <input id="input" list="placeSuggestions" placeholder="例如：肇庆高要明天会下雨吗？" autocomplete="off" aria-label="输入城市、区县或天气问题" />
+        <button class="input-clear" id="clearInputBtn" type="button" aria-label="清空输入" title="清空输入">×</button>
+        <div class="suggestions" id="suggestions" hidden role="listbox" aria-label="地点联想"></div>
+      </div>
+      <datalist id="placeSuggestions">
+        <option value="广东省肇庆市高要区今天的天气"></option>
+        <option value="肇庆高要未来3天天气"></option>
+        <option value="广州天河区明天会下雨吗"></option>
+        <option value="浙江省杭州市西湖区天气"></option>
+        <option value="上海今天温度"></option>
+      </datalist>
       <button class="primary" id="sendBtn" type="submit">发送</button>
     </form>
+    <div class="composer-hint">支持省、市、区县三级地点，例如“广东省肇庆市高要区”；不写时间时默认查询实时天气。</div>
+    <div id="status" class="status" aria-live="polite"></div>
   </section>
 
-  <section class="card">
-    <h2>Agent 推理日志</h2>
-    <div id="logs"><div class="hint">暂无推理日志，发送天气问题后会自动记录。</div></div>
-  </section>
+  <aside class="side-column">
+    <section class="card">
+      <div class="history-toolbar">
+        <h2>查询历史</h2>
+        <button id="clearHistoryBtn" type="button">清空</button>
+      </div>
+      <div id="historyList"><div class="hint">暂无历史查询，成功查询后会自动保存。</div></div>
+    </section>
+    <section class="card">
+      <h2>Agent 推理日志</h2>
+      <div id="logs"><div class="hint">暂无推理日志，发送天气问题后会自动记录。</div></div>
+    </section>
+  </aside>
 </main>
+</div>
 
 <script>
 (function () {
@@ -223,8 +459,237 @@
   var chatEl = $("chat");
   var logsEl = $("logs");
   var inputEl = $("input");
+  var inputClearEl = $("clearInputBtn");
+  var suggestionsEl = $("suggestions");
   var sendBtn = $("sendBtn");
   var hintEl = $("hint");
+  var statusEl = $("status");
+  var weatherResultEl = $("weatherResult");
+  var historyListEl = $("historyList");
+  var historyItems = [];
+  var historyKey = "weather-agent-history-v1";
+  var HISTORY_LIMIT = 30;
+  var authView = $("authView");
+  var appView = $("appView");
+  var authForm = $("authForm");
+  var authUsernameEl = $("authUsername");
+  var authPasswordEl = $("authPassword");
+  var authConfirmPasswordEl = $("authConfirmPassword");
+  var confirmPasswordField = $("confirmPasswordField");
+  var authStatusEl = $("authStatus");
+  var authSubmitEl = $("authSubmit");
+  var loginTabEl = $("loginTab");
+  var registerTabEl = $("registerTab");
+  var userTagEl = $("userTag");
+  var logoutBtnEl = $("logoutBtn");
+  var authMode = "login";
+  var currentUser = null;
+
+  // 城市背景图只保存公开图片地址，不参与天气判断；图片不可用时仍保留渐变蒙层。
+  var BACKGROUND_LIBRARY = {
+    "广州": [
+      "https://images.unsplash.com/photo-1506157786151-b8491531f063?auto=format&fit=crop&w=2200&q=80",
+      "https://images.unsplash.com/photo-1518005020951-eccb494ad742?auto=format&fit=crop&w=2200&q=80"
+    ],
+    "肇庆": [
+      "https://images.unsplash.com/photo-1500534623283-312aade485b7?auto=format&fit=crop&w=2200&q=80",
+      "https://images.unsplash.com/photo-1470770841072-f978cf4d019e?auto=format&fit=crop&w=2200&q=80"
+    ],
+    "深圳": [
+      "https://images.unsplash.com/photo-1519501025264-65ba15a82390?auto=format&fit=crop&w=2200&q=80",
+      "https://images.unsplash.com/photo-1494526585095-c41746248156?auto=format&fit=crop&w=2200&q=80"
+    ],
+    "上海": [
+      "https://images.unsplash.com/photo-1548919973-5cef591cdbc9?auto=format&fit=crop&w=2200&q=80",
+      "https://images.unsplash.com/photo-1538428494232-9c0d8a3ab403?auto=format&fit=crop&w=2200&q=80"
+    ],
+    "北京": [
+      "https://images.unsplash.com/photo-1508804185872-d7badad00f7d?auto=format&fit=crop&w=2200&q=80",
+      "https://images.unsplash.com/photo-1519817650390-64a93db51149?auto=format&fit=crop&w=2200&q=80"
+    ],
+    "杭州": [
+      "https://images.unsplash.com/photo-1523731407965-2430cd12f5e4?auto=format&fit=crop&w=2200&q=80",
+      "https://images.unsplash.com/photo-1470004914212-05527e49370b?auto=format&fit=crop&w=2200&q=80"
+    ],
+    "default": [
+      "https://images.unsplash.com/photo-1470770841072-f978cf4d019e?auto=format&fit=crop&w=2200&q=80",
+      "https://images.unsplash.com/photo-1500534623283-312aade485b7?auto=format&fit=crop&w=2200&q=80",
+      "https://images.unsplash.com/photo-1497250681960-ef046c08a56e?auto=format&fit=crop&w=2200&q=80"
+    ]
+  };
+  var backgroundTimer = null;
+  var backgroundIndex = 0;
+  var backgroundImageState = {};
+  var BACKGROUND_INTERVAL_MS = 12000;
+
+  function showStatus(text, kind) {
+    if (!statusEl) return;
+    statusEl.className = "status" + (kind ? " " + kind : "");
+    statusEl.textContent = text || "";
+  }
+
+  async function apiRequest(path, options) {
+    var request = options || {};
+    var headers = Object.assign({ "Accept": "application/json" }, request.headers || {});
+    if (request.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
+    var response = await fetch(path, Object.assign({}, request, { headers: headers, credentials: "same-origin" }));
+    var payload = {};
+    try { payload = await response.json(); } catch (e) { payload = {}; }
+    if (!response.ok) {
+      var error = new Error(payload.error || "请求失败（HTTP " + response.status + "）");
+      error.status = response.status;
+      error.payload = payload;
+      throw error;
+    }
+    return payload;
+  }
+
+  function showAuthStatus(text, kind) {
+    if (!authStatusEl) return;
+    authStatusEl.className = "auth-status" + (kind ? " " + kind : "");
+    authStatusEl.textContent = text || "";
+  }
+
+  function setAuthMode(mode) {
+    authMode = mode === "register" ? "register" : "login";
+    var registering = authMode === "register";
+    loginTabEl.classList.toggle("active", !registering);
+    registerTabEl.classList.toggle("active", registering);
+    confirmPasswordField.hidden = !registering;
+    authConfirmPasswordEl.required = registering;
+    authSubmitEl.textContent = registering ? "注册" : "登录";
+    authPasswordEl.autocomplete = registering ? "new-password" : "current-password";
+    showAuthStatus("", "");
+  }
+
+  function resetChatView() {
+    messages = [];
+    lastCity = "";
+    lastLocation = null;
+    lastOffset = 0;
+    lastDays = 1;
+    chatEl.innerHTML = "";
+    var h = document.createElement("div");
+    h.className = "hint";
+    h.id = "hint";
+    h.textContent = "登录后输入城市、区县和时间即可查询真实天气。";
+    chatEl.appendChild(h);
+    hintEl = h;
+    logsEl.innerHTML = '<div class="hint">暂无推理日志，发送天气问题后会自动记录。</div>';
+    if (weatherResultEl) {
+      weatherResultEl.hidden = true;
+      weatherResultEl.innerHTML = "";
+      weatherResultEl.classList.remove("result-enter");
+    }
+    if (inputEl) inputEl.value = "";
+    updateInputClearVisibility();
+    hideSuggestions();
+  }
+
+  function setAuthenticatedView(user) {
+    currentUser = user || null;
+    if (currentUser) {
+      historyKey = "weather-agent-history-v1:" + currentUser.username;
+      authView.hidden = true;
+      appView.hidden = false;
+      userTagEl.textContent = "用户：" + currentUser.username;
+      userTagEl.hidden = false;
+    } else {
+      historyKey = "weather-agent-history-v1";
+      authView.hidden = false;
+      appView.hidden = true;
+      userTagEl.hidden = true;
+      userTagEl.textContent = "";
+    }
+  }
+
+  async function loadServerHistory() {
+    if (!currentUser) return;
+    try {
+      var payload = await apiRequest("/api/chat/history?limit=100");
+      var records = Array.isArray(payload.messages) ? payload.messages : [];
+      resetChatView();
+      records.filter(function (item) { return item && (item.role === "user" || item.role === "assistant"); }).forEach(function (item) {
+        messages.push({ role: item.role, content: item.content });
+        addMessage(item.role, item.content);
+      });
+    } catch (error) {
+      showStatus("聊天记录读取失败，本次仍可以正常查询天气。", "error");
+    }
+  }
+
+  async function saveServerTurn(userText, assistantText) {
+    if (!currentUser || !userText || !assistantText) return;
+    try {
+      await apiRequest("/api/chat", {
+        method: "POST",
+        body: JSON.stringify({ messages: [
+          { role: "user", content: userText },
+          { role: "assistant", content: assistantText }
+        ] })
+      });
+    } catch (error) {
+      showStatus("天气已返回，但聊天记录保存失败，请稍后重试。", "error");
+    }
+  }
+
+  function preloadBackgroundImages(images) {
+    (images || []).forEach(function (url) {
+      if (!url || backgroundImageState[url]) return;
+      backgroundImageState[url] = "loading";
+      var image = new Image();
+      image.onload = function () { backgroundImageState[url] = "ready"; };
+      image.onerror = function () { backgroundImageState[url] = "error"; };
+      image.src = url;
+    });
+  }
+
+  function usableBackgroundList(images) {
+    var requested = (images && images.length ? images : BACKGROUND_LIBRARY.default).slice();
+    var ready = requested.filter(function (url) { return backgroundImageState[url] === "ready"; });
+    if (ready.length) return ready;
+    var pending = requested.filter(function (url) { return backgroundImageState[url] !== "error"; });
+    return pending.length ? pending : BACKGROUND_LIBRARY.default.slice();
+  }
+
+  function setBackgroundLayer(layer, url) {
+    if (!layer || !url) return;
+    // 颜色作为图片加载失败时的可见兜底，避免页面出现空白背景。
+    layer.style.backgroundImage = "url(\"" + url + "\")";
+  }
+
+  function startBackgroundRotation(images) {
+    var requested = (images && images.length ? images : BACKGROUND_LIBRARY.default).slice();
+    preloadBackgroundImages(requested);
+    preloadBackgroundImages(BACKGROUND_LIBRARY.default);
+    var list = usableBackgroundList(requested);
+    var layerA = $("bgA");
+    var layerB = $("bgB");
+    if (!layerA || !layerB) return;
+    if (backgroundTimer) window.clearInterval(backgroundTimer);
+    backgroundIndex = 0;
+    setBackgroundLayer(layerA, list[0]);
+    layerA.classList.add("active");
+    layerB.classList.remove("active");
+    if (list.length <= 1) return;
+    backgroundTimer = window.setInterval(function () {
+      list = usableBackgroundList(requested);
+      backgroundIndex = (backgroundIndex + 1) % list.length;
+      var next = backgroundIndex % 2 === 0 ? layerA : layerB;
+      var previous = next === layerA ? layerB : layerA;
+      setBackgroundLayer(next, list[backgroundIndex]);
+      next.classList.add("active");
+      previous.classList.remove("active");
+    }, BACKGROUND_INTERVAL_MS);
+  }
+
+  function applyBackgroundForLocation(location) {
+    var text = String((location && (location.requested || location.resolvedCity || location.city)) || "");
+    var key = Object.keys(BACKGROUND_LIBRARY).filter(function (name) {
+      return name !== "default" && text.indexOf(name) >= 0;
+    })[0] || "default";
+    startBackgroundRotation(BACKGROUND_LIBRARY[key]);
+  }
 
   // =====================================================================
   // 城市解析
@@ -249,6 +714,62 @@
         cityNames = Object.keys(data).sort(function (a, b) { return b.length - a.length; });
       })
       .catch(function () { cityTable = {}; cityNames = []; });
+  }
+
+  // 输入联想只渲染少量候选，避免把完整坐标表一次性塞进下拉层。
+  var suggestionEntries = [];
+  var SUGGESTION_EXAMPLES = ["广东省肇庆市高要区", "肇庆高要", "广州天河区", "浙江省杭州市西湖区", "上海市"];
+
+  function rebuildSuggestionEntries() {
+    var seen = {};
+    suggestionEntries = [];
+    function add(value) {
+      var text = String(value || "").replace(/\s+/g, "").trim();
+      if (!text || seen[text]) return;
+      seen[text] = true;
+      suggestionEntries.push(text);
+    }
+    SUGGESTION_EXAMPLES.forEach(add);
+    cityNames.slice(0, 500).forEach(function (name) {
+      add(name);
+      var record = cityTable[name] || {};
+      if (record.admin) add(String(record.admin) + name);
+    });
+  }
+
+  function hideSuggestions() {
+    if (!suggestionsEl) return;
+    suggestionsEl.hidden = true;
+    suggestionsEl.innerHTML = "";
+  }
+
+  function renderPlaceSuggestions(value) {
+    if (!suggestionsEl || busy) return hideSuggestions();
+    var query = String(value || "").replace(/\s+/g, "").toLowerCase();
+    if (!query) return hideSuggestions();
+    var matches = suggestionEntries.filter(function (item) { return item.toLowerCase().indexOf(query) >= 0; }).slice(0, 10);
+    if (!matches.length) return hideSuggestions();
+    suggestionsEl.innerHTML = "";
+    matches.forEach(function (item) {
+      var option = document.createElement("button");
+      option.type = "button";
+      option.className = "suggestion-item";
+      option.setAttribute("role", "option");
+      option.textContent = "📍 " + item;
+      option.addEventListener("click", function () {
+        inputEl.value = item;
+        updateInputClearVisibility();
+        hideSuggestions();
+        inputEl.focus();
+      });
+      suggestionsEl.appendChild(option);
+    });
+    suggestionsEl.hidden = false;
+  }
+
+  function updateInputClearVisibility() {
+    if (!inputClearEl) return;
+    inputClearEl.classList.toggle("visible", !!String(inputEl.value || "").trim());
   }
 
   function normalizeCity(raw) {
@@ -296,8 +817,11 @@
     };
   }
 
-  function staticMatchLevel(record) {
-    return /市/.test(String(record && record.admin || "")) ? "district" : "direct";
+  function staticMatchLevel(record, name) {
+    var admin = String(record && record.admin || "");
+    // 直辖市的 admin 通常是“北京市”这类名称，不能因此误判为区县。
+    if (normalizeLocationName(admin) === normalizeLocationName(name)) return "direct";
+    return /市|区|县|旗/.test(admin) ? "district" : "direct";
   }
 
   function resolveCity(raw) {
@@ -305,11 +829,11 @@
     var name = normalizeLocationName(raw);
     if (!name) return null;
     if (cityTable[name]) {
-      return makeCity(name, cityTable[name], original, staticMatchLevel(cityTable[name]));
+      return makeCity(name, cityTable[name], original, staticMatchLevel(cityTable[name], name));
     }
     if (CITY_ALIASES[name] && cityTable[CITY_ALIASES[name]]) {
       var alias = CITY_ALIASES[name];
-      return makeCity(alias, cityTable[alias], original, staticMatchLevel(cityTable[alias]));
+      return makeCity(alias, cityTable[alias], original, staticMatchLevel(cityTable[alias], alias));
     }
     var matches = [];
     for (var i = 0; i < cityNames.length; i++) {
@@ -330,15 +854,15 @@
     var selected = matches[0];
     // 输入明确带区/县但坐标表只命中了上级市时，交给在线地名库继续解析。
     if (matches.length === 1 && normalizeLocationName(selected) !== name && /(?:区|县|镇|乡)/.test(original)) return null;
-    var level = matches.length > 1 ? "district" : staticMatchLevel(cityTable[selected]);
+    var level = matches.length > 1 ? "district" : staticMatchLevel(cityTable[selected], selected);
     return makeCity(selected, cityTable[selected], original, level);
   }
 
   function extractCity(text) {
     var location = cleanLocationText(text);
-    if (!location) return "";
-    var resolved = resolveCity(location);
-    return resolved ? resolved.name : location;
+    // 保留用户写出的完整层级（如“肇庆高要”），再交给 resolveLocation 做区县优先解析。
+    // 这样工具参数、历史记录和降级提示不会丢失上级市信息。
+    return location || "";
   }
 
   // =====================================================================
@@ -367,6 +891,13 @@
     return "12级以上";
   }
 
+  function windDirectionText(degrees) {
+    if (degrees === null || degrees === undefined || degrees === "" || isNaN(Number(degrees))) return "未知";
+    var directions = ["北", "东北", "东", "东南", "南", "西南", "西", "西北"];
+    var index = Math.round(Number(degrees) / 45) % 8;
+    return directions[index] + "风（" + Math.round(Number(degrees)) + "°）";
+  }
+
   function uvText(v) {
     if (typeof v !== "number") return "未知";
     var n = Math.round(v);
@@ -381,8 +912,8 @@
     var p = new URLSearchParams({
       latitude: lat,
       longitude: lon,
-      daily: "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,relative_humidity_2m_mean,wind_speed_10m_max,uv_index_max",
-      current: "temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m",
+      daily: "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,relative_humidity_2m_mean,wind_speed_10m_max,wind_direction_10m_dominant,uv_index_max",
+      current: "temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,wind_direction_10m",
       timezone: "Asia/Shanghai",
       forecast_days: String(forecastDays)
     });
@@ -531,6 +1062,7 @@
       var pop = (daily.precipitation_probability_max || [])[i];
       var hum = (daily.relative_humidity_2m_mean || [])[i];
       var wind = (daily.wind_speed_10m_max || [])[i];
+      var windDirection = (daily.wind_direction_10m_dominant || [])[i];
       var uv = (daily.uv_index_max || [])[i];
       var weekday = "";
       try { weekday = WEEKDAYS[new Date(times[i] + "T00:00:00").getDay()]; } catch (e) { weekday = ""; }
@@ -547,6 +1079,7 @@
         "最高温": (high === null || high === undefined) ? "未知" : Math.round(high) + "°C",
         "最低温": (low === null || low === undefined) ? "未知" : Math.round(low) + "°C",
         "湿度": (hum === null || hum === undefined) ? "未知" : Math.round(hum) + "%",
+        "风向": windDirectionText(windDirection),
         "风力": kmhToBeaufort(wind),
         "降水概率": (pop === null || pop === undefined) ? "未知" : Math.round(pop) + "%",
         "紫外线指数": (uv === null || uv === undefined) ? null : Math.round(uv),
@@ -566,6 +1099,7 @@
         "温度": cur.temperature_2m === undefined ? "未知" : Math.round(cur.temperature_2m) + "°C",
         "体感温度": cur.apparent_temperature === undefined ? "未知" : Math.round(cur.apparent_temperature) + "°C",
         "湿度": cur.relative_humidity_2m === undefined ? "未知" : Math.round(cur.relative_humidity_2m) + "%",
+        "风向": windDirectionText(cur.wind_direction_10m),
         "风速": kmhToBeaufort(cur.wind_speed_10m)
       };
     }
@@ -645,10 +1179,10 @@
     if (items.length === 1) {
       var it = items[0];
       var out = headCity + " " + it["日期"] + " " + it["星期"] + "：" + it["天气图标"] + " " + it["天气"] +
-        "，" + it["最低温"] + " ~ " + it["最高温"] + "，湿度 " + it["湿度"] + "，风力 " + it["风力"] +
+        "，" + it["最低温"] + " ~ " + it["最高温"] + "，湿度 " + it["湿度"] + "，" + it["风向"] + "，风力 " + it["风力"] +
         "，降水概率 " + it["降水概率"] + "，紫外线 " + uvText(it["紫外线指数"]) + "。";
       if (current) {
-        out += "\n\n实况：当前 " + current["温度"] + "，体感 " + current["体感温度"] + "，" + current["天气"] + "，湿度 " + current["湿度"] + "。";
+        out += "\n\n实况：当前 " + current["温度"] + "，体感 " + current["体感温度"] + "，" + current["天气"] + "，湿度 " + current["湿度"] + "，" + current["风向"] + "，" + current["风速"] + "。";
       }
       var a = adviceOne(it, focus);
       if (a) out += "\n\n小提示：" + a;
@@ -660,7 +1194,7 @@
       var x = items[i];
       var extra = focus === "uv" ? "，紫外线 " + uvText(x["紫外线指数"]) : "";
       lines.push("- " + x["日期"] + " " + x["星期"] + "：" + x["天气图标"] + " " + x["天气"] + "，" +
-        x["最低温"] + " ~ " + x["最高温"] + "，湿度 " + x["湿度"] + "，风力 " + x["风力"] +
+        x["最低温"] + " ~ " + x["最高温"] + "，湿度 " + x["湿度"] + "，" + x["风向"] + "，风力 " + x["风力"] +
         "，降水概率 " + x["降水概率"] + extra);
     }
     lines.push("");
@@ -854,10 +1388,222 @@
     logsEl.insertBefore(item, logsEl.firstChild);
   }
 
+  function escapeHtml(value) {
+    return String(value === null || value === undefined ? "" : value)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/\"/g, "&quot;").replace(/'/g, "&#39;");
+  }
+
+  // 从工具调用日志中提取真实天气 JSON。错误 JSON 不会被当成成功结果保存。
+  function extractWeatherPayloads(steps) {
+    var payloads = [];
+    (steps || []).forEach(function (step) {
+      if (!step || !step.result) return;
+      try {
+        var payload = JSON.parse(step.result);
+        if (payload && Array.isArray(payload["预报"]) && payload["预报"].length) payloads.push(payload);
+      } catch (e) { /* 日志可能不是 JSON，忽略即可 */ }
+    });
+    return payloads;
+  }
+
+  function extractWeatherError(steps) {
+    for (var i = (steps || []).length - 1; i >= 0; i--) {
+      try {
+        var payload = JSON.parse(steps[i].result || "{}");
+        if (payload && payload.error) return payload.error;
+      } catch (e) { /* 忽略非 JSON 结果 */ }
+    }
+    return "";
+  }
+
+  function renderWeatherResult(payload) {
+    if (!weatherResultEl || !payload) return;
+    var items = Array.isArray(payload["预报"]) ? payload["预报"] : [];
+    var current = payload["当前实况"] || {};
+    var requested = payload["请求地点"] || payload["城市"] || "未知地点";
+    var resolved = payload["城市"] || requested;
+    var level = payload["地点级别"] || "direct";
+    var area = payload["地区"] || "";
+    var levelLabel = level === "district" ? "区县级" : level === "city_fallback" ? "市级（区县无数据，已降级）" : "市级";
+    var title = requested;
+    if (level === "city_fallback") title += "（已降级至" + resolved + "）";
+    else if (level === "district" && requested !== resolved) title += "（区县：" + resolved + "）";
+
+    var metric = function (label, value) {
+      return '<div class="metric"><span class="label">' + escapeHtml(label) +
+        '</span><span class="value">' + escapeHtml(value || "未知") + '</span></div>';
+    };
+    var currentHtml = [
+      metric("实时温度", current["温度"]),
+      metric("天气状况", (current["天气图标"] || "") + " " + (current["天气"] || "未知")),
+      metric("湿度", current["湿度"]),
+      metric("风向", current["风向"]),
+      metric("风力", current["风速"])
+    ].join("");
+    var forecastHtml = items.map(function (item) {
+      return '<div class="forecast-card">' +
+        '<div class="date">' + escapeHtml((item["日期"] || "") + " " + (item["星期"] || "")) + '</div>' +
+        '<div class="weather">' + escapeHtml((item["天气图标"] || "") + " " + (item["天气"] || "未知")) + '</div>' +
+        '<div class="detail">温度：' + escapeHtml((item["最低温"] || "未知") + " ~ " + (item["最高温"] || "未知")) +
+        '<br>降水：' + escapeHtml(item["降水概率"] || "未知") +
+        '<br>湿度：' + escapeHtml(item["湿度"] || "未知") + " · " + escapeHtml(item["风向"] || "未知") +
+        " · " + escapeHtml(item["风力"] || "未知") + '</div>' +
+        '</div>';
+    }).join("");
+
+    weatherResultEl.innerHTML =
+      '<div class="result-head"><div><span class="eyebrow">实时天气 · 真实接口</span>' +
+      '<h3>' + escapeHtml(title) + '</h3><p>' + escapeHtml(levelLabel + (area ? " · " + area : "") + " · 数据源：Open-Meteo") +
+      '</p></div></div>' +
+      '<div class="current-grid">' + currentHtml + '</div>' +
+      '<div class="forecast-grid">' + forecastHtml + '</div>';
+    weatherResultEl.hidden = false;
+    weatherResultEl.classList.remove("result-enter");
+    // 强制重新计算一次布局，让连续查询时每次都能播放淡入动画。
+    void weatherResultEl.offsetWidth;
+    weatherResultEl.classList.add("result-enter");
+  }
+
+  function formatHistoryTime(value) {
+    try {
+      return new Date(value).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+    } catch (e) { return "刚刚"; }
+  }
+
+  function loadHistory() {
+    try {
+      var parsed = JSON.parse(window.localStorage.getItem(historyKey) || "[]");
+      historyItems = Array.isArray(parsed) ? parsed.filter(function (item) { return item && item.location; }).map(function (item) {
+        return {
+          location: String(item.location),
+          resolvedCity: item.resolvedCity || "",
+          level: item.level || "direct",
+          status: item.status === "error" ? "error" : "success",
+          error: item.error || "",
+          queriedAt: item.queriedAt || new Date().toISOString()
+        };
+      }).slice(0, HISTORY_LIMIT) : [];
+    } catch (e) { historyItems = []; }
+    renderHistory();
+  }
+
+  function persistHistory() {
+    try { window.localStorage.setItem(historyKey, JSON.stringify(historyItems.slice(0, HISTORY_LIMIT))); }
+    catch (e) { showStatus("浏览器无法保存历史记录，但本次查询不受影响。", "error"); }
+  }
+
+  function renderHistory() {
+    if (!historyListEl) return;
+    historyListEl.innerHTML = "";
+    if (!historyItems.length) {
+      historyListEl.innerHTML = '<div class="hint">暂无历史查询，成功或失败的天气查询都会记录在这里。</div>';
+      return;
+    }
+    historyItems.forEach(function (item) {
+      var row = document.createElement("div");
+      row.className = "history-item" + (item.status === "error" ? " status-error" : "");
+      var requery = document.createElement("button");
+      requery.type = "button";
+      requery.className = "history-requery";
+      var place = document.createElement("span");
+      place.className = "history-place";
+      place.textContent = item.location;
+      var badge = document.createElement("span");
+      badge.className = "history-badge";
+      badge.textContent = item.status === "error" ? "失败" : "成功";
+      var time = document.createElement("span");
+      time.className = "history-time";
+      time.textContent = formatHistoryTime(item.queriedAt);
+      requery.appendChild(place);
+      requery.appendChild(badge);
+      requery.appendChild(time);
+      requery.title = item.status === "error" && item.error ? item.error : "点击重新查询";
+      requery.addEventListener("click", function () {
+        if (!busy) handleSend(item.location + "今天的天气");
+      });
+      var remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "history-delete";
+      remove.setAttribute("aria-label", "删除历史记录：" + item.location);
+      remove.title = "删除这条记录";
+      remove.textContent = "×";
+      remove.addEventListener("click", function (event) {
+        event.stopPropagation();
+        historyItems = historyItems.filter(function (old) { return old !== item; });
+        persistHistory();
+        renderHistory();
+      });
+      row.appendChild(requery);
+      row.appendChild(remove);
+      historyListEl.appendChild(row);
+    });
+  }
+
+  function upsertHistory(item) {
+    historyItems = [item].concat(historyItems.filter(function (old) { return old.location !== item.location; })).slice(0, HISTORY_LIMIT);
+    persistHistory();
+    renderHistory();
+  }
+
+  function saveHistoryFromPayload(payload) {
+    var location = String(payload["请求地点"] || payload["城市"] || "").trim();
+    if (!location) return;
+    upsertHistory({
+      location: location,
+      resolvedCity: payload["城市"] || "",
+      level: payload["地点级别"] || "direct",
+      status: "success",
+      error: "",
+      queriedAt: new Date().toISOString()
+    });
+    applyBackgroundForLocation({ requested: location, resolvedCity: payload["城市"] || "" });
+  }
+
+  function historyRequestLocation(text, steps) {
+    for (var i = (steps || []).length - 1; i >= 0; i--) {
+      var args = steps[i] && steps[i].args;
+      if (args && args.city) return String(args.city).trim();
+    }
+    return extractCity(text) || String(text || "").trim().slice(0, 40);
+  }
+
+  function saveHistoryFailure(text, error, steps) {
+    var raw = String(text || "").trim();
+    if (!raw || (!WEATHER_RE.test(raw) && !(steps && steps.length))) return;
+    var location = historyRequestLocation(raw, steps);
+    if (!location) return;
+    upsertHistory({
+      location: location,
+      resolvedCity: "",
+      level: "unknown",
+      status: "error",
+      error: error || "天气接口未返回有效数据",
+      queriedAt: new Date().toISOString()
+    });
+  }
+
+  function processWeatherSteps(steps, requestText) {
+    var payloads = extractWeatherPayloads(steps);
+    if (payloads.length) {
+      renderWeatherResult(payloads[payloads.length - 1]);
+      payloads.forEach(saveHistoryFromPayload);
+      showStatus("天气已更新，查询地点已保存到历史记录。", "ok");
+      return true;
+    }
+    var error = extractWeatherError(steps) || "天气接口未返回有效数据";
+    saveHistoryFailure(requestText, error, steps);
+    showStatus("查询未完成：" + error, "error");
+    return false;
+  }
+
   function setBusy(flag) {
     busy = flag;
     sendBtn.disabled = flag;
     inputEl.disabled = flag;
+    if (inputClearEl) inputClearEl.disabled = flag;
+    if (flag) hideSuggestions();
+    if (flag) showStatus("正在定位地点并查询真实天气…", "loading");
   }
 
   function showEngine(mode, note) {
@@ -968,15 +1714,39 @@
   }
 
   async function handleSend(text) {
-    if (busy || !text) return;
+    text = String(text || "").trim();
+    if (!currentUser) {
+      showAuthStatus("请先登录后再使用天气查询。", "error");
+      return;
+    }
+    if (busy) return;
+    if (!text || /^[，。？！,!?；;、\s]+$/.test(text)) {
+      showStatus("请输入城市、区县或完整天气问题，例如“肇庆高要今天温度”。", "error");
+      inputEl.focus();
+      return;
+    }
     addMessage("user", text);
     inputEl.value = "";
+    updateInputClearVisibility();
+    hideSuggestions();
+    if (weatherResultEl) {
+      weatherResultEl.hidden = true;
+      weatherResultEl.classList.remove("result-enter");
+    }
     setBusy(true);
 
     var bubble = addMessage("assistant", "");
+    var loading = document.createElement("span");
+    loading.className = "loading-inline";
     var spin = document.createElement("span");
     spin.className = "spin";
-    bubble.appendChild(spin);
+    var loadingLabel = document.createElement("span");
+    loadingLabel.className = "loading-label";
+    loadingLabel.textContent = "正在查询";
+    loading.appendChild(spin);
+    loading.appendChild(loadingLabel);
+    bubble.appendChild(loading);
+    var assistantOutput = "";
 
     var historyText = messages.filter(function (m) { return m.role === "user"; }).map(function (m) { return m.content; }).join(" ");
 
@@ -984,12 +1754,17 @@
       if (cloudReady) {
         bubble.innerHTML = "";
         var r = await cloudAnswer(text, bubble);
+        assistantOutput = bubble.textContent || "";
         addLog(text, r.steps, "", r.thinking);
+        processWeatherSteps(r.steps, text);
         showEngine("cloud");
       } else {
         bubble.innerHTML = "";
         var local = await localAnswer(text, historyText);
         bubble.textContent = local.output;
+        assistantOutput = local.output || "";
+        messages.push({ role: "user", content: text });
+        messages.push({ role: "assistant", content: assistantOutput });
         if (USE_CLOUD_LLM) {
           addLog(text, local.steps, "云端模型不可用，已由本地规则引擎完成本次查询", "未调用云端模型（" + (cloudError || "模型未就绪") + "）");
           showEngine("local", cloudError);
@@ -997,6 +1772,7 @@
           addLog(text, local.steps, "", "未调用云端模型：已手动关闭，直接由本地规则引擎解析并查询真实天气");
           showEngine("off", "已手动关闭云端模型");
         }
+        processWeatherSteps(local.steps, text);
       }
     } catch (err) {
       var code = (err && err.error && err.error.code) || "";
@@ -1006,13 +1782,21 @@
         bubble.innerHTML = "";
         var fb = await localAnswer(text, historyText);
         bubble.textContent = fb.output;
+        assistantOutput = fb.output || "";
+        messages.push({ role: "user", content: text });
+        messages.push({ role: "assistant", content: assistantOutput });
         addLog(text, fb.steps, "云端模型调用失败（" + (code || "unknown") + "），已用本地规则引擎回答", "云端错误：" + detail);
+        processWeatherSteps(fb.steps, text);
         showEngine("local", code + " " + detail);
       } catch (err2) {
         bubble.textContent = "查询失败：" + detail;
+        assistantOutput = bubble.textContent;
         addLog(text, [], "查询失败", "");
+        saveHistoryFailure(text, detail, []);
+        showStatus("查询失败：" + detail, "error");
       }
     } finally {
+      await saveServerTurn(text, assistantOutput);
       setBusy(false);
       inputEl.focus();
     }
@@ -1025,6 +1809,7 @@
 
   function renderChips() {
     var box = $("chips");
+    box.innerHTML = "";
     EXAMPLES.forEach(function (t) {
       var b = document.createElement("button");
       b.type = "button";
@@ -1078,29 +1863,140 @@
     }
   }
 
+  async function startAgentApp(user) {
+    setAuthenticatedView(user);
+    resetChatView();
+    loadHistory();
+    startBackgroundRotation(BACKGROUND_LIBRARY.default);
+    await loadCityTable();
+    rebuildSuggestionEntries();
+    renderChips();
+    await initCloud();
+    await loadServerHistory();
+    inputEl.focus();
+  }
+
+  async function bootAuth() {
+    setAuthMode("login");
+    setAuthenticatedView(null);
+    try {
+      var session = await apiRequest("/api/auth/me");
+      if (session && session.authenticated && session.user) {
+        await startAgentApp(session.user);
+      } else {
+        showAuthStatus("请先登录或注册账号。", "");
+      }
+    } catch (error) {
+      if (error.status !== 401) showAuthStatus("无法连接登录服务，请确认使用 python server.py 启动网页。", "error");
+    }
+  }
+
+  authForm.addEventListener("submit", async function (event) {
+    event.preventDefault();
+    var username = String(authUsernameEl.value || "").trim();
+    var password = String(authPasswordEl.value || "");
+    if (!/^[A-Za-z0-9_]{3,32}$/.test(username)) {
+      showAuthStatus("用户名需为 3-32 位字母、数字或下划线。", "error");
+      return;
+    }
+    if (password.length < 6) {
+      showAuthStatus("密码至少需要 6 位。", "error");
+      return;
+    }
+    if (authMode === "register" && password !== String(authConfirmPasswordEl.value || "")) {
+      showAuthStatus("两次输入的密码不一致。", "error");
+      return;
+    }
+    authSubmitEl.disabled = true;
+    showAuthStatus(authMode === "register" ? "正在创建账号…" : "正在登录…", "");
+    try {
+      if (authMode === "register") {
+        await apiRequest("/api/auth/register", { method: "POST", body: JSON.stringify({ username: username, password: password }) });
+        authPasswordEl.value = "";
+        authConfirmPasswordEl.value = "";
+        setAuthMode("login");
+        authUsernameEl.value = username;
+        showAuthStatus("注册成功，请使用新账号登录。", "ok");
+      } else {
+        var login = await apiRequest("/api/auth/login", { method: "POST", body: JSON.stringify({ username: username, password: password }) });
+        authPasswordEl.value = "";
+        await startAgentApp(login.user);
+      }
+    } catch (error) {
+      if (error.status === 409 || String(error.message).indexOf("已存在") >= 0) showAuthStatus("用户名已存在，请换一个用户名。", "error");
+      else if (error.status === 401) showAuthStatus("账号或密码错误，请重新输入。", "error");
+      else showAuthStatus(error.message || "操作失败，请稍后重试。", "error");
+    } finally {
+      authSubmitEl.disabled = false;
+    }
+  });
+  loginTabEl.addEventListener("click", function () { setAuthMode("login"); });
+  registerTabEl.addEventListener("click", function () { setAuthMode("register"); });
+  logoutBtnEl.addEventListener("click", async function () {
+    logoutBtnEl.disabled = true;
+    try { await apiRequest("/api/auth/logout", { method: "POST" }); } catch (e) { /* 即使服务端失败也清理本地界面 */ }
+    currentUser = null;
+    historyItems = [];
+    resetChatView();
+    setAuthenticatedView(null);
+    setAuthMode("login");
+    showAuthStatus("已退出登录。", "ok");
+    startBackgroundRotation(BACKGROUND_LIBRARY.default);
+    logoutBtnEl.disabled = false;
+  });
+
   $("composer").addEventListener("submit", function (e) {
     e.preventDefault();
     handleSend(inputEl.value.trim());
   });
+  var composing = false;
+  var inputShellEl = document.querySelector(".input-shell");
+  inputEl.addEventListener("compositionstart", function () { composing = true; });
+  inputEl.addEventListener("compositionend", function () { composing = false; });
+  inputEl.addEventListener("input", function () {
+    updateInputClearVisibility();
+    renderPlaceSuggestions(inputEl.value);
+  });
+  inputEl.addEventListener("focus", function () {
+    if (inputEl.value) renderPlaceSuggestions(inputEl.value);
+  });
+  inputEl.addEventListener("blur", function () {
+    window.setTimeout(hideSuggestions, 180);
+  });
+  inputEl.addEventListener("keydown", function (event) {
+    if (event.key === "Escape") {
+      hideSuggestions();
+      return;
+    }
+    // 中文输入法组词时不触发表单提交，避免半个地点被误查询。
+    if (event.key === "Enter" && (event.isComposing || composing)) event.preventDefault();
+  });
+  if (inputClearEl) {
+    inputClearEl.addEventListener("click", function () {
+      inputEl.value = "";
+      updateInputClearVisibility();
+      hideSuggestions();
+      inputEl.focus();
+    });
+  }
+  document.addEventListener("click", function (event) {
+    if (inputShellEl && !inputShellEl.contains(event.target)) hideSuggestions();
+  });
   $("clearBtn").addEventListener("click", function () {
-    messages = [];
-    lastCity = "";
     conversationId = "weather-" + Math.random().toString(36).slice(2, 10);
-    chatEl.innerHTML = "";
-    var h = document.createElement("div");
-    h.className = "hint";
-    h.id = "hint";
-    h.textContent = "对话已清空。输入城市 + 时间即可查询真实天气。";
-    chatEl.appendChild(h);
-    hintEl = h;
-    logsEl.innerHTML = '<div class="hint">暂无推理日志，发送天气问题后会自动记录。</div>';
+    resetChatView();
+    showStatus("对话已清空。历史记录仍会保留。", "ok");
+  });
+  $("clearHistoryBtn").addEventListener("click", function () {
+    historyItems = [];
+    try { window.localStorage.removeItem(historyKey); } catch (e) { /* 隐私模式下可能不可用 */ }
+    renderHistory();
+    showStatus("查询历史已清空。", "ok");
   });
 
-  loadCityTable().then(function () {
-    renderChips();
-    initCloud();
-    inputEl.focus();
-  });
+  // 认证页也使用默认背景，但天气数据和用户历史必须等登录成功后再初始化。
+  startBackgroundRotation(BACKGROUND_LIBRARY.default);
+  bootAuth();
 })();
 </script>
 </body>
